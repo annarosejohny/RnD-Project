@@ -1,0 +1,2502 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>JabRef references</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<script type="text/javascript">
+<!--
+// QuickSearch script for JabRef HTML export 
+// Version: 3.0
+//
+// Copyright (c) 2006-2011, Mark Schenk
+//
+// This software is distributed under a Creative Commons Attribution 3.0 License
+// http://creativecommons.org/licenses/by/3.0/
+//
+// Features:
+// - intuitive find-as-you-type searching
+//    ~ case insensitive
+//    ~ ignore diacritics (optional)
+//
+// - search with/without Regular Expressions
+// - match BibTeX key
+//
+
+// Search settings
+var searchAbstract = true;	// search in abstract
+var searchComment = true;	// search in comment
+
+var noSquiggles = true; 	// ignore diacritics when searching
+var searchRegExp = false; 	// enable RegExp searches
+
+
+if (window.addEventListener) {
+	window.addEventListener("load",initSearch,false); }
+else if (window.attachEvent) {
+	window.attachEvent("onload", initSearch); }
+
+function initSearch() {
+	// check for quick search table and searchfield
+	if (!document.getElementById('qs_table')||!document.getElementById('quicksearch')) { return; }
+
+	// load all the rows and sort into arrays
+	loadTableData();
+	
+	//find the query field
+	qsfield = document.getElementById('qs_field');
+
+	// previous search term; used for speed optimisation
+	prevSearch = '';
+
+	//find statistics location
+	stats = document.getElementById('stat');
+	setStatistics(-1);
+	
+	// set up preferences
+	initPreferences();
+
+	// shows the searchfield
+	document.getElementById('quicksearch').style.display = 'block';
+	document.getElementById('qs_field').onkeyup = quickSearch;
+}
+
+function loadTableData() {
+	// find table and appropriate rows
+	searchTable = document.getElementById('qs_table');
+	var allRows = searchTable.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+	// split all rows into entryRows and infoRows (e.g. abstract, comment, bibtex)
+	entryRows = new Array(); infoRows = new Array(); absRows = new Array(); revRows = new Array();
+
+	// get data from each row
+	entryRowsData = new Array(); absRowsData = new Array(); revRowsData = new Array(); 
+	
+	BibTeXKeys = new Array();
+	
+	for (var i=0, k=0, j=0; i<allRows.length;i++) {
+		if (allRows[i].className.match(/entry/)) {
+			entryRows[j] = allRows[i];
+			entryRowsData[j] = stripDiacritics(getTextContent(allRows[i]));
+			allRows[i].id ? BibTeXKeys[j] = allRows[i].id : allRows[i].id = 'autokey_'+j;
+			j ++;
+		} else {
+			infoRows[k++] = allRows[i];
+			// check for abstract/comment
+			if (allRows[i].className.match(/abstract/)) {
+				absRows.push(allRows[i]);
+				absRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			} else if (allRows[i].className.match(/comment/)) {
+				revRows.push(allRows[i]);
+				revRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			}
+		}
+	}
+	//number of entries and rows
+	numEntries = entryRows.length;
+	numInfo = infoRows.length;
+	numAbs = absRows.length;
+	numRev = revRows.length;
+}
+
+function quickSearch(){
+	
+	tInput = qsfield;
+
+	if (tInput.value.length == 0) {
+		showAll();
+		setStatistics(-1);
+		qsfield.className = '';
+		return;
+	} else {
+		t = stripDiacritics(tInput.value);
+
+		if(!searchRegExp) { t = escapeRegExp(t); }
+			
+		// only search for valid RegExp
+		try {
+			textRegExp = new RegExp(t,"i");
+			closeAllInfo();
+			qsfield.className = '';
+		}
+			catch(err) {
+			prevSearch = tInput.value;
+			qsfield.className = 'invalidsearch';
+			return;
+		}
+	}
+	
+	// count number of hits
+	var hits = 0;
+
+	// start looping through all entry rows
+	for (var i = 0; cRow = entryRows[i]; i++){
+
+		// only show search the cells if it isn't already hidden OR if the search term is getting shorter, then search all
+		if(cRow.className.indexOf('noshow')==-1 || tInput.value.length <= prevSearch.length){
+			var found = false; 
+
+			if (entryRowsData[i].search(textRegExp) != -1 || BibTeXKeys[i].search(textRegExp) != -1){ 
+				found = true;
+			} else {
+				if(searchAbstract && absRowsData[i]!=undefined) {
+					if (absRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+				if(searchComment && revRowsData[i]!=undefined) {
+					if (revRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+			}
+			
+			if (found){
+				cRow.className = 'entry show';
+				hits++;
+			} else {
+				cRow.className = 'entry noshow';
+			}
+		}
+	}
+
+	// update statistics
+	setStatistics(hits)
+	
+	// set previous search value
+	prevSearch = tInput.value;
+}
+
+
+// Strip Diacritics from text
+// http://stackoverflow.com/questions/990904/javascript-remove-accents-in-strings
+
+// String containing replacement characters for stripping accents 
+var stripstring = 
+    'AAAAAAACEEEEIIII'+
+    'DNOOOOO.OUUUUY..'+
+    'aaaaaaaceeeeiiii'+
+    'dnooooo.ouuuuy.y'+
+    'AaAaAaCcCcCcCcDd'+
+    'DdEeEeEeEeEeGgGg'+
+    'GgGgHhHhIiIiIiIi'+
+    'IiIiJjKkkLlLlLlL'+
+    'lJlNnNnNnnNnOoOo'+
+    'OoOoRrRrRrSsSsSs'+
+    'SsTtTtTtUuUuUuUu'+
+    'UuUuWwYyYZzZzZz.';
+
+function stripDiacritics(str){
+
+    if(noSquiggles==false){
+        return str;
+    }
+
+    var answer='';
+    for(var i=0;i<str.length;i++){
+        var ch=str[i];
+        var chindex=ch.charCodeAt(0)-192;   // Index of character code in the strip string
+        if(chindex>=0 && chindex<stripstring.length){
+            // Character is within our table, so we can strip the accent...
+            var outch=stripstring.charAt(chindex);
+            // ...unless it was shown as a '.'
+            if(outch!='.')ch=outch;
+        }
+        answer+=ch;
+    }
+    return answer;
+}
+
+// http://stackoverflow.com/questions/3446170/escape-string-for-use-in-javascript-regex
+// NOTE: must escape every \ in the export code because of the JabRef Export...
+function escapeRegExp(str) {
+  return str.replace(/[-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+}
+
+function toggleInfo(articleid,info) {
+
+	var entry = document.getElementById(articleid);
+	var abs = document.getElementById('abs_'+articleid);
+	var rev = document.getElementById('rev_'+articleid);
+	var bib = document.getElementById('bib_'+articleid);
+	
+	if (abs && info == 'abstract') {
+		abs.className.indexOf('noshow') == -1?abs.className = 'abstract noshow':abs.className = 'abstract show';
+	} else if (rev && info == 'comment') {
+		rev.className.indexOf('noshow') == -1?rev.className = 'comment noshow':rev.className = 'comment show';
+	} else if (bib && info == 'bibtex') {
+		bib.className.indexOf('noshow') == -1?bib.className = 'bibtex noshow':bib.className = 'bibtex show';
+	} else { 
+		return;
+	}
+
+	// check if one or the other is available
+	var revshow; var absshow; var bibshow;
+	(abs && abs.className.indexOf('noshow') == -1)? absshow = true: absshow = false;
+	(rev && rev.className.indexOf('noshow') == -1)? revshow = true: revshow = false;	
+	(bib && bib.className.indexOf('noshow') == -1)? bibshow = true: bibshow = false;
+	
+	// highlight original entry
+	if(entry) {
+		if (revshow || absshow || bibshow) {
+		entry.className = 'entry highlight show';
+		} else {
+		entry.className = 'entry show';
+		}
+	}
+	
+	// When there's a combination of abstract/comment/bibtex showing, need to add class for correct styling
+	if(absshow) {
+		(revshow||bibshow)?abs.className = 'abstract nextshow':abs.className = 'abstract';
+	} 
+	if (revshow) {
+		bibshow?rev.className = 'comment nextshow': rev.className = 'comment';
+	}	
+	
+}
+
+function setStatistics (hits) {
+	if(hits < 0) { hits=numEntries; }
+	if(stats) { stats.firstChild.data = hits + '/' + numEntries}
+}
+
+function getTextContent(node) {
+	// Function written by Arve Bersvendsen
+	// http://www.virtuelvis.com
+	
+	if (node.nodeType == 3) {
+	return node.nodeValue;
+	} // text node
+	if (node.nodeType == 1 && node.className != "infolinks") { // element node
+	var text = [];
+	for (var chld = node.firstChild;chld;chld=chld.nextSibling) {
+		text.push(getTextContent(chld));
+	}
+	return text.join("");
+	} return ""; // some other node, won't contain text nodes.
+}
+
+function showAll(){
+	closeAllInfo();
+	for (var i = 0; i < numEntries; i++){ entryRows[i].className = 'entry show'; }
+}
+
+function closeAllInfo(){
+	for (var i=0; i < numInfo; i++){
+		if (infoRows[i].className.indexOf('noshow') ==-1) {
+			infoRows[i].className = infoRows[i].className + ' noshow';
+		}
+	}
+}
+
+function clearQS() {
+	qsfield.value = '';
+	showAll();
+}
+
+function redoQS(){
+	showAll();
+	quickSearch(qsfield);
+}
+
+function updateSetting(obj){
+	var option = obj.id;
+	var checked = obj.value;
+
+	switch(option)
+	 {
+	 case "opt_searchAbs":
+	   searchAbstract=!searchAbstract;
+	   redoQS();
+	   break;
+	 case "opt_searchRev":
+	   searchComment=!searchComment;
+	   redoQS();
+	   break;
+	 case "opt_useRegExp":
+	   searchRegExp=!searchRegExp;
+	   redoQS();
+	   break;
+	 case "opt_noAccents":
+	   noSquiggles=!noSquiggles;
+	   loadTableData();
+	   redoQS();
+	   break;
+	 }
+}
+
+function initPreferences(){
+	if(searchAbstract){document.getElementById("opt_searchAbs").checked = true;}
+	if(searchComment){document.getElementById("opt_searchRev").checked = true;}
+	if(noSquiggles){document.getElementById("opt_noAccents").checked = true;}
+	if(searchRegExp){document.getElementById("opt_useRegExp").checked = true;}
+	
+	if(numAbs==0) {document.getElementById("opt_searchAbs").parentNode.style.display = 'none';}
+	if(numRev==0) {document.getElementById("opt_searchRev").parentNode.style.display = 'none';}
+}
+
+function toggleSettings(){
+	var togglebutton = document.getElementById('showsettings');
+	var settings = document.getElementById('settings');
+	
+	if(settings.className == "hidden"){
+		settings.className = "show";
+		togglebutton.innerText = "close settings";
+		togglebutton.textContent = "close settings";
+	}else{
+		settings.className = "hidden";
+		togglebutton.innerText = "settings...";		
+		togglebutton.textContent = "settings...";
+	}
+}
+
+-->
+</script>
+<style type="text/css">
+body { background-color: white; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.2; padding: 1em; color: #2E2E2E; margin: auto 2em; }
+
+form#quicksearch { width: auto; border-style: solid; border-color: gray; border-width: 1px 0px; padding: 0.7em 0.5em; display:none; position:relative; }
+span#searchstat {padding-left: 1em;}
+
+div#settings { margin-top:0.7em; /* border-bottom: 1px transparent solid; background-color: #efefef; border: 1px grey solid; */ }
+div#settings ul {margin: 0; padding: 0; }
+div#settings li {margin: 0; padding: 0 1em 0 0; display: inline; list-style: none; }
+div#settings li + li { border-left: 2px #efefef solid; padding-left: 0.5em;}
+div#settings input { margin-bottom: 0px;}
+
+div#settings.hidden {display:none;}
+
+#showsettings { border: 1px grey solid; padding: 0 0.5em; float:right; line-height: 1.6em; text-align: right; }
+#showsettings:hover { cursor: pointer; }
+
+.invalidsearch { background-color: red; }
+input[type="button"] { background-color: #efefef; border: 1px #2E2E2E solid;}
+
+table { width: 100%; empty-cells: show; border-spacing: 0em 0.2em; margin: 1em 0em; border-style: none; }
+th, td { border: 1px gray solid; border-width: 1px 1px; padding: 0.5em; vertical-align: top; text-align: left; }
+th { background-color: #efefef; }
+td + td, th + th { border-left: none; }
+
+td a { color: navy; text-decoration: none; }
+td a:hover  { text-decoration: underline; }
+
+tr.noshow { display: none;}
+tr.highlight td { background-color: #EFEFEF; border-top: 2px #2E2E2E solid; font-weight: bold; }
+tr.abstract td, tr.comment td, tr.bibtex td { background-color: #EFEFEF; text-align: justify; border-bottom: 2px #2E2E2E solid; }
+tr.nextshow td { border-bottom: 1px gray solid; }
+
+tr.bibtex pre { width: 100%; overflow: auto; white-space: pre-wrap;}
+p.infolinks { margin: 0.3em 0em 0em 0em; padding: 0px; }
+
+@media print {
+	p.infolinks, #qs_settings, #quicksearch, t.bibtex { display: none !important; }
+	tr { page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<form action="" id="quicksearch">
+<input type="text" id="qs_field" autocomplete="off" placeholder="Type to search..." /> <input type="button" onclick="clearQS()" value="clear" />
+<span id="searchstat">Matching entries: <span id="stat">0</span></span>
+<div id="showsettings" onclick="toggleSettings()">settings...</div>
+<div id="settings" class="hidden">
+<ul>
+<li><input type="checkbox" class="search_setting" id="opt_searchAbs" onchange="updateSetting(this)"><label for="opt_searchAbs"> include abstract</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_searchRev" onchange="updateSetting(this)"><label for="opt_searchRev"> include comment</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_useRegExp" onchange="updateSetting(this)"><label for="opt_useRegExp"> use RegExp</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_noAccents" onchange="updateSetting(this)"><label for="opt_noAccents"> ignore accents</label></li>
+</ul>
+</div>
+</form>
+<table id="qs_table" border="1">
+<thead><tr><th width="20%">Author</th><th width="30%">Title</th><th width="5%">Year</th><th width="30%">Journal/Proceedings</th><th width="10%">Reftype</th><th width="5%">DOI/URL</th></tr></thead>
+<tbody><tr id="6165309" class="entry">
+	<td>Ji, S., Xu, W., Yang, M. and Yu, K.</td>
+	<td>3D Convolutional Neural Networks for Human Action Recognition <p class="infolinks">[<a href="javascript:toggleInfo('6165309','bibtex')">BibTeX</a>]</p></td>
+	<td>2013</td>
+	<td>IEEE Transactions on Pattern Analysis and Machine Intelligence<br/>Vol. 35(1), pp. 221-231&nbsp;</td>
+	<td>misc</td>
+	<td><a href="https://doi.org/10.1109/TPAMI.2012.59">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_6165309" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@misc{6165309,
+  author = {S. Ji and W. Xu and M. Yang and K. Yu},
+  title = {3D Convolutional Neural Networks for Human Action Recognition},
+  journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  year = {2013},
+  volume = {35},
+  number = {1},
+  pages = {221-231},
+  doi = {https://doi.org/10.1109/TPAMI.2012.59}
+}
+</pre></td>
+</tr>
+<tr id="coifman2017critical" class="entry">
+	<td>Coifman, B. and Li, L.</td>
+	<td>A critical evaluation of the Next Generation Simulation (NGSIM) vehicle trajectory dataset <p class="infolinks">[<a href="javascript:toggleInfo('coifman2017critical','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>Transportation Research Part B: Methodological<br/>Vol. 105(C), pp. 362-377&nbsp;</td>
+	<td>misc</td>
+	<td><a href="https://www.sciencedirect.com/science/article/abs/pii/S0191261517300838">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_coifman2017critical" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@misc{coifman2017critical,
+  author = {Coifman, Benjamin and Li, Lizhe},
+  title = {A critical evaluation of the Next Generation Simulation (NGSIM) vehicle trajectory dataset},
+  journal = {Transportation Research Part B: Methodological},
+  publisher = {Elsevier},
+  year = {2017},
+  volume = {105},
+  number = {C},
+  pages = {362--377},
+  url = {https://www.sciencedirect.com/science/article/abs/pii/S0191261517300838}
+}
+</pre></td>
+</tr>
+<tr id="kong2014discriminative" class="entry">
+	<td>Kong, Y., Kit, D. and Fu, Y.</td>
+	<td>A discriminative model with multiple temporal scales for action prediction <p class="infolinks">[<a href="javascript:toggleInfo('kong2014discriminative','bibtex')">BibTeX</a>]</p></td>
+	<td>2014</td>
+	<td>European conference on computer vision, pp. 596-611&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://link.springer.com/chapter/10.1007/978-3-319-10602-1_39">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_kong2014discriminative" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{kong2014discriminative,
+  author = {Kong, Yu and Kit, Dmitry and Fu, Yun},
+  title = {A discriminative model with multiple temporal scales for action prediction},
+  booktitle = {European conference on computer vision},
+  year = {2014},
+  pages = {596--611},
+  url = {https://link.springer.com/chapter/10.1007/978-3-319-10602-1_39}
+}
+</pre></td>
+</tr>
+<tr id="dhiman2019review" class="entry">
+	<td>Dhiman, C. and Vishwakarma, D.K.</td>
+	<td>A review of state-of-the-art techniques for abnormal human activity recognition <p class="infolinks">[<a href="javascript:toggleInfo('dhiman2019review','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Engineering Applications of Artificial Intelligence<br/>Vol. 77, pp. 21-45&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://www.sciencedirect.com/science/article/pii/S0952197618301775">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_dhiman2019review" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{dhiman2019review,
+  author = {Dhiman, Chhavi and Vishwakarma, Dinesh Kumar},
+  title = {A review of state-of-the-art techniques for abnormal human activity recognition},
+  journal = {Engineering Applications of Artificial Intelligence},
+  publisher = {Elsevier},
+  year = {2019},
+  volume = {77},
+  pages = {21--45},
+  url = {https://www.sciencedirect.com/science/article/pii/S0952197618301775}
+}
+</pre></td>
+</tr>
+<tr id="oprea2020review" class="entry">
+	<td>Oprea, S., Martinez-Gonzalez, P., Garcia-Garcia, A., Castro-Vargas, J.A., Orts-Escolano, S., Garcia-Rodriguez, J. and Argyros, A.</td>
+	<td>A Review on Deep Learning Techniques for Video Prediction <p class="infolinks">[<a href="javascript:toggleInfo('oprea2020review','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>arXiv preprint arXiv:2004.05214&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/abs/2004.05214">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_oprea2020review" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{oprea2020review,
+  author = {Oprea, Sergiu and Martinez-Gonzalez, Pablo and Garcia-Garcia, Alberto and Castro-Vargas, John Alejandro and Orts-Escolano, Sergio and Garcia-Rodriguez, Jose and Argyros, Antonis},
+  title = {A Review on Deep Learning Techniques for Video Prediction},
+  journal = {arXiv preprint arXiv:2004.05214},
+  year = {2020},
+  url = {https://arxiv.org/abs/2004.05214}
+}
+</pre></td>
+</tr>
+<tr id="lu2013abnormal" class="entry">
+	<td>Lu, C., Shi, J. and Jia, J.</td>
+	<td>Abnormal event detection at 150 fps in matlab <p class="infolinks">[<a href="javascript:toggleInfo('lu2013abnormal','bibtex')">BibTeX</a>]</p></td>
+	<td>2013</td>
+	<td>Proceedings of the IEEE international conference on computer vision, pp. 2720-2727&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://www.cv-foundation.org/openaccess/content_iccv_2013/html/Lu_Abnormal_Event_Detection_2013_ICCV_paper.html">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_lu2013abnormal" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{lu2013abnormal,
+  author = {Lu, Cewu and Shi, Jianping and Jia, Jiaya},
+  title = {Abnormal event detection at 150 fps in matlab},
+  booktitle = {Proceedings of the IEEE international conference on computer vision},
+  year = {2013},
+  pages = {2720--2727},
+  url = {https://www.cv-foundation.org/openaccess/content_iccv_2013/html/Lu_Abnormal_Event_Detection_2013_ICCV_paper.html}
+}
+</pre></td>
+</tr>
+<tr id="chong2017abnormal" class="entry">
+	<td>Chong, Y.S. and Tay, Y.H.</td>
+	<td>Abnormal Event Detection in Videos using Spatiotemporal Autoencoder <p class="infolinks">[<a href="javascript:toggleInfo('chong2017abnormal','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>International Symposium on Neural Networks&nbsp;</td>
+	<td>misc</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="bib_chong2017abnormal" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@misc{chong2017abnormal,
+  author = {Yong Shean Chong and Yong Haur Tay},
+  title = {Abnormal Event Detection in Videos using Spatiotemporal Autoencoder},
+  booktitle = {International Symposium on Neural Networks},
+  year = {2017}
+}
+</pre></td>
+</tr>
+<tr id="rodriguez2018action" class="entry">
+	<td>Rodriguez, C., Fernando, B. and Li, H.</td>
+	<td>Action anticipation by predicting future dynamic images <p class="infolinks">[<a href="javascript:toggleInfo('rodriguez2018action','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>Proceedings of the European Conference on Computer Vision (ECCV), pp. 0-0&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_eccv_2018_workshops/w15/html/Rodriguez_Action_Anticipation_By_Predicting_Future_Dynamic_Images_ECCVW_2018_paper.html">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_rodriguez2018action" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{rodriguez2018action,
+  author = {Rodriguez, Cristian and Fernando, Basura and Li, Hongdong},
+  title = {Action anticipation by predicting future dynamic images},
+  booktitle = {Proceedings of the European Conference on Computer Vision (ECCV)},
+  year = {2018},
+  pages = {0--0},
+  url = {https://openaccess.thecvf.com/content_eccv_2018_workshops/w15/html/Rodriguez_Action_Anticipation_By_Predicting_Future_Dynamic_Images_ECCVW_2018_paper.html}
+}
+</pre></td>
+</tr>
+<tr id="shi2018action" class="entry">
+	<td>Shi, Y., Fernando, B. and Hartley, R.</td>
+	<td>Action anticipation with rbf kernelized feature mapping rnn <p class="infolinks">[<a href="javascript:toggleInfo('shi2018action','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('shi2018action','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>Proceedings of the European Conference on Computer Vision (ECCV), pp. 301-317&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ECCV_2018/papers/Yuge_Shi_Action_Anticipation_with_ECCV_2018_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_shi2018action" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We introduce a novel Recurrent Neural Network-based algorithm for future video feature generation and action anticipation called feature mapping RNN . Our novel RNN architecture builds upon three effective principles of machine learning, namely parameter sharing, Radial Basis Function kernels and adversar- ial training. Using only some of the earliest frames of a video, the feature map- ping RNN is able to generate future features with a fraction of the parameters needed in traditional RNN. By feeding these future features into a simple multi- layer perceptron facilitated with an RBF kernel layer, we are able to accurately predict the action in the video.<br>In our experiments, we obtain 18% improvement on JHMDB-21 dataset, 6% on UCF101-24 and 13% improvement on UT-Interaction datasets over prior state- of-the-art for action anticipation.<br>Keywords: Human action prediction, novel Recurrent Neural Network, Radial Basis Function kernel, Adversarial training</td>
+</tr>
+<tr id="bib_shi2018action" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{shi2018action,
+  author = {Shi, Yuge and Fernando, Basura and Hartley, Richard},
+  title = {Action anticipation with rbf kernelized feature mapping rnn},
+  booktitle = {Proceedings of the European Conference on Computer Vision (ECCV)},
+  year = {2018},
+  pages = {301--317},
+  url = {https://openaccess.thecvf.com/content_ECCV_2018/papers/Yuge_Shi_Action_Anticipation_with_ECCV_2018_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="duarte2018action" class="entry">
+	<td>Duarte, N.F., Rakovi&cacute;, M., Tasevski, J., Coco, M.I., Billard, A. and Santos-Victor, J.</td>
+	<td>Action anticipation: Reading the intentions of humans and robots <p class="infolinks">[<a href="javascript:toggleInfo('duarte2018action','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>IEEE Robotics and Automation Letters<br/>Vol. 3(4), pp. 4132-4139&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8423498">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_duarte2018action" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{duarte2018action,
+  author = {Duarte, Nuno Ferreira and Rakovi&cacute;, Mirko and Tasevski, Jovica and Coco, Moreno Ignazio and Billard, Aude and Santos-Victor, Jos&eacute;},
+  title = {Action anticipation: Reading the intentions of humans and robots},
+  journal = {IEEE Robotics and Automation Letters},
+  publisher = {IEEE},
+  year = {2018},
+  volume = {3},
+  number = {4},
+  pages = {4132--4139},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=8423498}
+}
+</pre></td>
+</tr>
+<tr id="bilen2017action" class="entry">
+	<td>Bilen, H., Fernando, B., Gavves, E. and Vedaldi, A.</td>
+	<td>Action Recognition with Dynamic Image Networks <p class="infolinks">[<a href="javascript:toggleInfo('bilen2017action','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>IEEE Transactions on Pattern Analysis and Machine Intelligence&nbsp;</td>
+	<td>misc</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="bib_bilen2017action" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@misc{bilen2017action,
+  author = {Hakan Bilen and Basura Fernando and Efstratios Gavves and Andrea Vedaldi},
+  title = {Action Recognition with Dynamic Image Networks},
+  journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  year = {2017}
+}
+</pre></td>
+</tr>
+<tr id="LSTM_trajectory" class="entry">
+	<td>Altché, F. and de La Fortelle, A.</td>
+	<td>An LSTM network for highway trajectory prediction <p class="infolinks">[<a href="javascript:toggleInfo('LSTM_trajectory','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>2017 IEEE 20th International Conference on Intelligent Transportation Systems (ITSC), pp. 353-359&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ITSC.2017.8317913">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_LSTM_trajectory" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{LSTM_trajectory,
+  author = {F. Altché and A. de La Fortelle},
+  title = {An LSTM network for highway trajectory prediction},
+  booktitle = {2017 IEEE 20th International Conference on Intelligent Transportation Systems (ITSC)},
+  year = {2017},
+  pages = {353-359},
+  doi = {https://doi.org/10.1109/ITSC.2017.8317913}
+}
+</pre></td>
+</tr>
+<tr id="kiran2018overview" class="entry">
+	<td>Kiran, B.R., Thomas, D.M. and Parakkal, R.</td>
+	<td>An overview of deep learning based methods for unsupervised and semi-supervised anomaly detection in videos <p class="infolinks">[<a href="javascript:toggleInfo('kiran2018overview','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('kiran2018overview','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>Journal of Imaging<br/>Vol. 4(2), pp. 36&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://www.mdpi.com/2313-433X/4/2/36">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_kiran2018overview" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Videos represent the primary source of information for surveillance applications. Video material is often available in large quantities but in most cases it contains little or no annotation for supervised learning. This article reviews the state-of-the-art deep learning based methods for video anomaly detection and categorizes them based on the type of model and criteria of detection. We also perform simple studies to understand the different approaches and provide the criteria of evaluation for spatio-temporal anomaly detection. View Full-Text<br>Keywords: unsupervised methods; anomaly detection; representation learning; autoencoders; LSTMs; generative adversarial networks; Variational Autoencoders; predictive models</td>
+</tr>
+<tr id="bib_kiran2018overview" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{kiran2018overview,
+  author = {Kiran, B Ravi and Thomas, Dilip Mathew and Parakkal, Ranjith},
+  title = {An overview of deep learning based methods for unsupervised and semi-supervised anomaly detection in videos},
+  journal = {Journal of Imaging},
+  publisher = {Multidisciplinary Digital Publishing Institute},
+  year = {2018},
+  volume = {4},
+  number = {2},
+  pages = {36},
+  url = {https://www.mdpi.com/2313-433X/4/2/36}
+}
+</pre></td>
+</tr>
+<tr id="medel2016anomaly" class="entry">
+	<td>Medel, J.R. and Savakis, A.</td>
+	<td>Anomaly Detection in Video Using Predictive Convolutional Long Short-Term Memory Networks <p class="infolinks">[<a href="javascript:toggleInfo('medel2016anomaly','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>&nbsp;</td>
+	<td>misc</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="bib_medel2016anomaly" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@misc{medel2016anomaly,
+  author = {Jefferson Ryan Medel and Andreas Savakis},
+  title = {Anomaly Detection in Video Using Predictive Convolutional Long Short-Term Memory Networks},
+  year = {2016}
+}
+</pre></td>
+</tr>
+<tr id="10.1145/3097983.3098052" class="entry">
+	<td>Zhou, C. and Paffenroth, R.C.</td>
+	<td>Anomaly Detection with Robust Deep Autoencoders <p class="infolinks">[<a href="javascript:toggleInfo('10.1145/3097983.3098052','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('10.1145/3097983.3098052','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>Proceedings of the 23rd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, pp. 665–674&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3097983.3098052">DOI</a> <a href="https://doi.org/10.1145/3097983.3098052">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_10.1145/3097983.3098052" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Deep autoencoders, and other deep neural networks, have demonstrated their effectiveness in discovering non-linear features across many problem domains. However, in many real-world problems, large outliers and pervasive noise are commonplace, and one may not have access to clean training data as required by standard deep denoising autoencoders. Herein, we demonstrate novel extensions to deep autoencoders which not only maintain a deep autoencoders' ability to discover high quality, non-linear features but can also eliminate outliers and noise without access to any clean training data. Our model is inspired by Robust Principal Component Analysis, and we split the input data X into two parts, X = L_D + S, where L_D can be effectively reconstructed by a deep autoencoder and S contains the outliers and noise in the original data X. Since such splitting increases the robustness of standard deep autoencoders, we name our model a "Robust Deep Autoencoder (RDA)". Further, we present generalizations of our results to grouped sparsity norms which allow one to distinguish random anomalies from other types of structured corruptions, such as a collection of features being corrupted across many instances or a collection of instances having more corruptions than their fellows. Such "Group Robust Deep Autoencoders (GRDA)" give rise to novel anomaly detection approaches whose superior performance we demonstrate on a selection of benchmark problems.</td>
+</tr>
+<tr id="bib_10.1145/3097983.3098052" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{10.1145/3097983.3098052,
+  author = {Zhou, Chong and Paffenroth, Randy C.},
+  title = {Anomaly Detection with Robust Deep Autoencoders},
+  booktitle = {Proceedings of the 23rd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining},
+  publisher = {Association for Computing Machinery},
+  year = {2017},
+  pages = {665–674},
+  url = {https://doi.org/10.1145/3097983.3098052},
+  doi = {https://doi.org/10.1145/3097983.3098052}
+}
+</pre></td>
+</tr>
+<tr id="anomaly_detection_survey" class="entry">
+	<td>Chandola, V., Banerjee, A. and Kumar, V.</td>
+	<td>Anomaly Detection: A Survey <p class="infolinks">[<a href="javascript:toggleInfo('anomaly_detection_survey','bibtex')">BibTeX</a>]</p></td>
+	<td>2009</td>
+	<td>ACM Comput. Surv.<br/>Vol. 41(3)&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1145/1541880.1541882">DOI</a> <a href="https://doi.org/10.1145/1541880.1541882">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_anomaly_detection_survey" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{anomaly_detection_survey,
+  author = {Chandola, Varun and Banerjee, Arindam and Kumar, Vipin},
+  title = {Anomaly Detection: A Survey},
+  journal = {ACM Comput. Surv.},
+  publisher = {Association for Computing Machinery},
+  year = {2009},
+  volume = {41},
+  number = {3},
+  url = {https://doi.org/10.1145/1541880.1541882},
+  doi = {https://doi.org/10.1145/1541880.1541882}
+}
+</pre></td>
+</tr>
+<tr id="chan2016anticipating" class="entry">
+	<td>Chan, F.-H., Chen, Y.-T., Xiang, Y. and Sun, M.</td>
+	<td>Anticipating accidents in dashcam videos <p class="infolinks">[<a href="javascript:toggleInfo('chan2016anticipating','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>Asian Conference on Computer Vision, pp. 136-153&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://yuxng.github.io/chan_accv16.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_chan2016anticipating" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{chan2016anticipating,
+  author = {Chan, Fu-Hsiang and Chen, Yu-Ting and Xiang, Yu and Sun, Min},
+  title = {Anticipating accidents in dashcam videos},
+  booktitle = {Asian Conference on Computer Vision},
+  year = {2016},
+  pages = {136--153},
+  url = {https://yuxng.github.io/chan_accv16.pdf}
+}
+</pre></td>
+</tr>
+<tr id="vondrick2016anticipating" class="entry">
+	<td>Vondrick, C., Pirsiavash, H. and Torralba, A.</td>
+	<td>Anticipating visual representations from unlabeled video <p class="infolinks">[<a href="javascript:toggleInfo('vondrick2016anticipating','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('vondrick2016anticipating','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 98-106&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_cvpr_2016/papers/Vondrick_Anticipating_Visual_Representations_CVPR_2016_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_vondrick2016anticipating" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Anticipating actions and objects before they start or ap- pear is a difficult problem in computer vision with several real-world applications. This task is challenging partly because it requires leveraging extensive knowledge of the world that is difficult to write down. We believe that a promising resource for efficiently learning this knowledge is through readily available unlabeled video. We present a framework that capitalizes on temporal structure in unla- beled video to learn to anticipate human actions and ob- jects. The key idea behind our approach is that we can train deep networks to predict the visual representation of images in the future. Visual representations are a promising predic- tion target because they encode images at a higher seman- tic level than pixels yet are automatic to compute. We then apply recognition algorithms on our predicted representa- tion to anticipate objects and actions. We experimentally validate this idea on two datasets, anticipating actions one second in the future and objects five seconds in the future.</td>
+</tr>
+<tr id="bib_vondrick2016anticipating" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{vondrick2016anticipating,
+  author = {Vondrick, Carl and Pirsiavash, Hamed and Torralba, Antonio},
+  title = {Anticipating visual representations from unlabeled video},
+  booktitle = {Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
+  year = {2016},
+  pages = {98--106},
+  url = {https://openaccess.thecvf.com/content_cvpr_2016/papers/Vondrick_Anticipating_Visual_Representations_CVPR_2016_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="pirri2019anticipation" class="entry">
+	<td>Pirri, F., Mauro, L., Alati, E., Ntouskos, V., Izadpanahkakhk, M. and Omrani, E.</td>
+	<td>Anticipation and next action forecasting in video: an end-to-end model with memory <p class="infolinks">[<a href="javascript:toggleInfo('pirri2019anticipation','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('pirri2019anticipation','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>arXiv preprint arXiv:1901.03728&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/1901.03728.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_pirri2019anticipation" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Action anticipation and forecasting in videos do not require a hat-trick, as far as there are signs in the context to fore- see how actions are going to be deployed. Capturing these signs is hard because the context includes the past. We propose an end-to-end network for action anticipation and forecasting with memory, to both anticipate the current ac- tion and foresee the next one. Experiments on action se- quence datasets show excellent results indicating that train- ing on histories with a dynamic memory can significantly improve forecasting performance.</td>
+</tr>
+<tr id="bib_pirri2019anticipation" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{pirri2019anticipation,
+  author = {Pirri, Fiora and Mauro, Lorenzo and Alati, Edoardo and Ntouskos, Valsamis and Izadpanahkakhk, Mahdieh and Omrani, Elham},
+  title = {Anticipation and next action forecasting in video: an end-to-end model with memory},
+  journal = {arXiv preprint arXiv:1901.03728},
+  year = {2019},
+  url = {https://arxiv.org/pdf/1901.03728.pdf}
+}
+</pre></td>
+</tr>
+<tr id="schydlo2018anticipation" class="entry">
+	<td>Schydlo, P., Rakovic, M., Jamone, L. and Santos-Victor, J.</td>
+	<td>Anticipation in human-robot cooperation: A recurrent neural network approach for multiple action sequences prediction <p class="infolinks">[<a href="javascript:toggleInfo('schydlo2018anticipation','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>2018 IEEE International Conference on Robotics and Automation (ICRA), pp. 1-6&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8460924">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_schydlo2018anticipation" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{schydlo2018anticipation,
+  author = {Schydlo, Paul and Rakovic, Mirko and Jamone, Lorenzo and Santos-Victor, Jos&eacute;},
+  title = {Anticipation in human-robot cooperation: A recurrent neural network approach for multiple action sequences prediction},
+  booktitle = {2018 IEEE International Conference on Robotics and Automation (ICRA)},
+  year = {2018},
+  pages = {1--6},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=8460924}
+}
+</pre></td>
+</tr>
+<tr id="7451737" class="entry">
+	<td>Huang, C. and Mutlu, B.</td>
+	<td>Anticipatory robot control for efficient human-robot collaboration <p class="infolinks">[<a href="javascript:toggleInfo('7451737','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>2016 11th ACM/IEEE International Conference on Human-Robot Interaction (HRI), pp. 83-90&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://ieeexplore.ieee.org/document/7451737">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_7451737" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{7451737,
+  author = {C. Huang and B. Mutlu},
+  title = {Anticipatory robot control for efficient human-robot collaboration},
+  booktitle = {2016 11th ACM/IEEE International Conference on Human-Robot Interaction (HRI)},
+  year = {2016},
+  pages = {83-90},
+  url = {https://ieeexplore.ieee.org/document/7451737}
+}
+</pre></td>
+</tr>
+<tr id="Rasouli_2017_ICCV" class="entry">
+	<td>Rasouli, A., Kotseruba, I. and Tsotsos, J.K.</td>
+	<td>Are They Going to Cross? A Benchmark Dataset and Baseline for Pedestrian Crosswalk Behavior <p class="infolinks">[<a href="javascript:toggleInfo('Rasouli_2017_ICCV','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Rasouli_2017_ICCV','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>Proceedings of the IEEE International Conference on Computer Vision (ICCV) Workshops&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ICCV_2017_workshops/papers/w3/Rasouli_Are_They_Going_ICCV_2017_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_Rasouli_2017_ICCV" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Designing autonomous vehicles suitable for urban envi- ronments remains an unresolved problem. One of the major dilemmas faced by autonomous cars is how to understand the intention of other road users and communicate with them. The existing datasets do not provide the necessary means for such higher level analysis of traffic scenes. With this in mind, we introduce a novel dataset which in addition to providing the bounding box information for pedestrian detection, also includes the behavioral and contextual an- notations for the scenes. This allows combining visual and semantic information for better understanding of pedestri- ans’ intentions in various traffic scenarios. We establish baseline approaches for analyzing the data and show that combining visual and contextual information can improve prediction of pedestrian intention at the point of crossing by at least 20%.</td>
+</tr>
+<tr id="bib_Rasouli_2017_ICCV" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Rasouli_2017_ICCV,
+  author = {Rasouli, Amir and Kotseruba, Iuliia and Tsotsos, John K.},
+  title = {Are They Going to Cross? A Benchmark Dataset and Baseline for Pedestrian Crosswalk Behavior},
+  booktitle = {Proceedings of the IEEE International Conference on Computer Vision (ICCV) Workshops},
+  year = {2017},
+  url = {https://openaccess.thecvf.com/content_ICCV_2017_workshops/papers/w3/Rasouli_Are_They_Going_ICCV_2017_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="benterki2020artificial" class="entry">
+	<td>Benterki, A., Boukhnifer, M., Judalet, V. and Maaoui, C.</td>
+	<td>Artificial Intelligence for Vehicle Behavior Anticipation: Hybrid Approach Based on Maneuver Classification and Trajectory Prediction <p class="infolinks">[<a href="javascript:toggleInfo('benterki2020artificial','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>IEEE Access<br/>Vol. 8, pp. 56992-57002&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9043491">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_benterki2020artificial" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{benterki2020artificial,
+  author = {Benterki, Abdelmoudjib and Boukhnifer, Moussa and Judalet, Vincent and Maaoui, Choubeila},
+  title = {Artificial Intelligence for Vehicle Behavior Anticipation: Hybrid Approach Based on Maneuver Classification and Trajectory Prediction},
+  journal = {IEEE Access},
+  publisher = {IEEE},
+  year = {2020},
+  volume = {8},
+  pages = {56992--57002},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=9043491}
+}
+</pre></td>
+</tr>
+<tr id="gujjar2019classifying" class="entry">
+	<td>Gujjar, P. and Vaughan, R.</td>
+	<td>Classifying pedestrian actions in advance using predicted video of urban driving scenes <p class="infolinks">[<a href="javascript:toggleInfo('gujjar2019classifying','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>2019 International Conference on Robotics and Automation (ICRA), pp. 2097-2103&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="http://autonomy.cs.sfu.ca/doc/gujjar_icra19.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_gujjar2019classifying" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{gujjar2019classifying,
+  author = {Gujjar, Pratik and Vaughan, Richard},
+  title = {Classifying pedestrian actions in advance using predicted video of urban driving scenes},
+  booktitle = {2019 International Conference on Robotics and Automation (ICRA)},
+  year = {2019},
+  pages = {2097--2103},
+  url = {http://autonomy.cs.sfu.ca/doc/gujjar_icra19.pdf}
+}
+</pre></td>
+</tr>
+<tr id="ye2019compositional" class="entry">
+	<td>Ye, Y., Singh, M., Gupta, A. and Tulsiani, S.</td>
+	<td>Compositional video prediction <p class="infolinks">[<a href="javascript:toggleInfo('ye2019compositional','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('ye2019compositional','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Proceedings of the IEEE International Conference on Computer Vision, pp. 10353-10362&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ICCV_2019/papers/Ye_Compositional_Video_Prediction_ICCV_2019_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_ye2019compositional" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We present an approach for pixel-level future prediction given an input image of a scene. We observe that a scene is comprised of distinct entities that undergo motion and present an approach that operationalizes this insight. We implicitly predict future states of independent entities while reasoning about their interactions, and compose future video frames using these predicted states. We overcome the inherent multi-modality of the task using a global trajectory-level latent random variable, and show that this allows us to sample diverse and plausible futures. We empirically validate our approach against alternate representations and ways of incorporating multi-modality. We examine two datasets, one comprising of stacked objects that may fall, and the other containing videos of humans performing activities in a gym, and show that our approach allows realistic stochastic video prediction across these diverse settings. See project website (https://judyye.github.io/CVP/) for video predictions.</td>
+</tr>
+<tr id="bib_ye2019compositional" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{ye2019compositional,
+  author = {Ye, Yufei and Singh, Maneesh and Gupta, Abhinav and Tulsiani, Shubham},
+  title = {Compositional video prediction},
+  booktitle = {Proceedings of the IEEE International Conference on Computer Vision},
+  year = {2019},
+  pages = {10353--10362},
+  url = {https://openaccess.thecvf.com/content_ICCV_2019/papers/Ye_Compositional_Video_Prediction_ICCV_2019_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="Nikhil_2018_ECCV_Workshops" class="entry">
+	<td>Nikhil, N. and Tran Morris, B.</td>
+	<td>Convolutional Neural Network for Trajectory Prediction <p class="infolinks">[<a href="javascript:toggleInfo('Nikhil_2018_ECCV_Workshops','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Nikhil_2018_ECCV_Workshops','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>Proceedings of the European Conference on Computer Vision (ECCV) Workshops&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ECCVW_2018/papers/11131/Nikhil_Convolutional_Neural_Network_for_Trajectory_Prediction_ECCVW_2018_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_Nikhil_2018_ECCV_Workshops" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Predictingtrajectoriesofpedestriansisquintessentialforau- tonomous robots which share the same environment with humans. In order to effectively and safely interact with humans, trajectory predic- tion needs to be both precise and computationally efficient. In this work, we propose a convolutional neural network (CNN) based human trajec- tory prediction approach. Unlike more recent LSTM-based moles which attend sequentially to each frame, our model supports increased paral- lelism and effective temporal representation. The proposed compact CNN model is faster than the current approaches yet still yields competitive results.</td>
+</tr>
+<tr id="bib_Nikhil_2018_ECCV_Workshops" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Nikhil_2018_ECCV_Workshops,
+  author = {Nikhil, Nishant and Tran Morris, Brendan},
+  title = {Convolutional Neural Network for Trajectory Prediction},
+  booktitle = {Proceedings of the European Conference on Computer Vision (ECCV) Workshops},
+  year = {2018},
+  url = {https://openaccess.thecvf.com/content_ECCVW_2018/papers/11131/Nikhil_Convolutional_Neural_Network_for_Trajectory_Prediction_ECCVW_2018_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="Deo_2018_CVPR_Workshops" class="entry">
+	<td>Deo, N. and Trivedi, M.M.</td>
+	<td>Convolutional Social Pooling for Vehicle Trajectory Prediction <p class="infolinks">[<a href="javascript:toggleInfo('Deo_2018_CVPR_Workshops','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Deo_2018_CVPR_Workshops','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) Workshops&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_cvpr_2018_workshops/papers/w29/Deo_Convolutional_Social_Pooling_CVPR_2018_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_Deo_2018_CVPR_Workshops" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Forecasting the motion of surrounding vehicles is a critical ability for an autonomous vehicle deployed in complex traffic. Motion of all vehicles in a scene is governed by the traffic context, i.e., the motion and relative spatial configuration of neighboring vehicles. In this paper we propose an LSTM encoder-decoder model that uses convolutional social pooling as an improvement to social pooling layers for robustly learning inter-dependencies in vehicle motion. Additionally, our model outputs a multi-modal predictive distribution over future trajectories based on maneuver classes. We evaluate our model using the publicly available NGSIM US-101 and I-80 datasets. Our results show improvement over the state of the art in terms of RMS values of prediction error and negative log-likelihoods of true future trajectories under the model's predictive distribution. We also present a qualitative analysis of the model's predicted distributions for various traffic scenarios.</td>
+</tr>
+<tr id="bib_Deo_2018_CVPR_Workshops" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Deo_2018_CVPR_Workshops,
+  author = {Deo, Nachiket and Trivedi, Mohan M.},
+  title = {Convolutional Social Pooling for Vehicle Trajectory Prediction},
+  booktitle = {Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) Workshops},
+  year = {2018},
+  url = {https://openaccess.thecvf.com/content_cvpr_2018_workshops/papers/w29/Deo_Convolutional_Social_Pooling_CVPR_2018_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="fan2019cubic" class="entry">
+	<td>Fan, H., Zhu, L. and Yang, Y.</td>
+	<td>Cubic lstms for video prediction <p class="infolinks">[<a href="javascript:toggleInfo('fan2019cubic','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('fan2019cubic','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td><br/>Vol. 33Proceedings of the AAAI Conference on Artificial Intelligence, pp. 8263-8270&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1609/aaai.v33i01.33018263">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_fan2019cubic" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Predicting future frames in videos has become a promising direction of research for both computer vision and robot learning communities. The core of this problem involves moving object capture and future motion prediction. While object capture specifies which objects are moving in videos, motion prediction describes their future dynamics. Motivated by this analysis, we propose a Cubic Long Short-Term Memory (CubicLSTM) unit for video prediction. CubicLSTM consists of three branches, i.e., a spatial branch for capturing moving objects, a temporal branch for processing motions, and an output branch for combining the first two branches to generate predicted frames. Stacking multiple CubicLSTM units along the spatial branch and output branch, and then evolving along the temporal branch can form a cubic recurrent neural network (CubicRNN). Experiment shows that CubicRNN produces more accurate video predictions than prior methods on both synthetic and real-world datasets.</td>
+</tr>
+<tr id="bib_fan2019cubic" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{fan2019cubic,
+  author = {Fan, Hehe and Zhu, Linchao and Yang, Yi},
+  title = {Cubic lstms for video prediction},
+  booktitle = {Proceedings of the AAAI Conference on Artificial Intelligence},
+  year = {2019},
+  volume = {33},
+  pages = {8263--8270},
+  doi = {https://doi.org/10.1609/aaai.v33i01.33018263}
+}
+</pre></td>
+</tr>
+<tr id="rasouli2020deep" class="entry">
+	<td>Rasouli, A.</td>
+	<td>Deep Learning for Vision-based Prediction: A Survey <p class="infolinks">[<a href="javascript:toggleInfo('rasouli2020deep','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('rasouli2020deep','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>arXiv preprint arXiv:2007.00095&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/2007.00095.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_rasouli2020deep" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Vision-based prediction algorithms have a wide range of applications including autonomous driving, surveillance, human-robot interaction, weather prediction. The objective of this paper is to provide an overview of the field in the past five years with a particular focus on deep learning approaches. For this purpose, we categorize these algorithms into video prediction, action prediction, trajectory prediction, body motion prediction, and other prediction applications. For each category, we highlight the common architectures, training methods and types of data used. In addition, we discuss the common evaluation metrics and datasets used for vision-based prediction tasks. A database of all the information presented in this survey, cross-referenced according to papers, datasets and metrics, can be found online at https://github.com/aras62/vision-based-prediction.<br>Index Terms—Video Prediction, Action Prediction , Trajectory Prediction, Motion Prediction, Survey.</td>
+</tr>
+<tr id="bib_rasouli2020deep" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{rasouli2020deep,
+  author = {Rasouli, Amir},
+  title = {Deep Learning for Vision-based Prediction: A Survey},
+  journal = {arXiv preprint arXiv:2007.00095},
+  year = {2020},
+  url = {https://arxiv.org/pdf/2007.00095.pdf}
+}
+</pre></td>
+</tr>
+<tr id="mathieu2015deep" class="entry">
+	<td>Mathieu, M., Couprie, C. and LeCun, Y.</td>
+	<td>Deep multi-scale video prediction beyond mean square error <p class="infolinks">[<a href="javascript:toggleInfo('mathieu2015deep','bibtex')">BibTeX</a>]</p></td>
+	<td>2015</td>
+	<td>arXiv preprint arXiv:1511.05440&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/abs/1511.05440">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_mathieu2015deep" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{mathieu2015deep,
+  author = {Mathieu, Michael and Couprie, Camille and LeCun, Yann},
+  title = {Deep multi-scale video prediction beyond mean square error},
+  journal = {arXiv preprint arXiv:1511.05440},
+  year = {2015},
+  url = {https://arxiv.org/abs/1511.05440}
+}
+</pre></td>
+</tr>
+<tr id="lotter2016deep" class="entry">
+	<td>Lotter, W., Kreiman, G. and Cox, D.</td>
+	<td>Deep predictive coding networks for video prediction and unsupervised learning <p class="infolinks">[<a href="javascript:toggleInfo('lotter2016deep','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('lotter2016deep','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>arXiv preprint arXiv:1605.08104&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/1605.08104.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_lotter2016deep" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: While great strides have been made in using deep learning algorithms to solve supervised learning tasks, the problem of unsupervised learning — leveraging un- labeled examples to learn about the structure of a domain — remains a difficult unsolved challenge. Here, we explore prediction of future frames in a video se- quence as an unsupervised learning rule for learning about the structure of the visual world. We describe a predictive neural network (“PredNet”) architecture that is inspired by the concept of “predictive coding” from the neuroscience lit- erature. These networks learn to predict future frames in a video sequence, with each layer in the network making local predictions and only forwarding deviations from those predictions to subsequent network layers. We show that these networks are able to robustly learn to predict the movement of synthetic (rendered) objects, and that in doing so, the networks learn internal representations that are useful for decoding latent object parameters (e.g. pose) that support object recognition with fewer training views. We also show that these networks can scale to com- plex natural image streams (car-mounted camera videos), capturing key aspects of both egocentric movement and the movement of objects in the visual scene, and the representation learned in this setting is useful for estimating the steer- ing angle. Altogether, these results suggest that prediction represents a powerful framework for unsupervised learning, allowing for implicit learning of object and scene structure.</td>
+</tr>
+<tr id="bib_lotter2016deep" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{lotter2016deep,
+  author = {Lotter, William and Kreiman, Gabriel and Cox, David},
+  title = {Deep predictive coding networks for video prediction and unsupervised learning},
+  journal = {arXiv preprint arXiv:1605.08104},
+  year = {2016},
+  url = {https://arxiv.org/pdf/1605.08104.pdf}
+}
+</pre></td>
+</tr>
+<tr id="wang2019delving" class="entry">
+	<td>Wang, H. and Feng, J.</td>
+	<td>Delving into 3D Action Anticipation from Streaming Videos <p class="infolinks">[<a href="javascript:toggleInfo('wang2019delving','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>arXiv preprint arXiv:1906.06521&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/1906.06521.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_wang2019delving" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{wang2019delving,
+  author = {Wang, Hongsong and Feng, Jiashi},
+  title = {Delving into 3D Action Anticipation from Streaming Videos},
+  journal = {arXiv preprint arXiv:1906.06521},
+  year = {2019},
+  url = {https://arxiv.org/pdf/1906.06521.pdf}
+}
+</pre></td>
+</tr>
+<tr id="Gao_2019_ICCV" class="entry">
+	<td>Gao, H., Xu, H., Cai, Q.-Z., Wang, R., Yu, F. and Darrell, T.</td>
+	<td>Disentangling Propagation and Generation for Video Prediction <p class="infolinks">[<a href="javascript:toggleInfo('Gao_2019_ICCV','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Gao_2019_ICCV','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ICCV_2019/papers/Gao_Disentangling_Propagation_and_Generation_for_Video_Prediction_ICCV_2019_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_Gao_2019_ICCV" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: A dynamic scene has two types of elements: those that move fluidly and can be predicted from previous frames, and those which are disoccluded (exposed) and cannot be extrapolated. Prior approaches to video prediction typi- cally learn either to warp or to hallucinate future pixels, but not both. In this paper, we describe a computational model for high-fidelity video prediction which disentangles motion-specific propagation from motion-agnostic genera- tion. We introduce a confidence-aware warping operator which gates the output of pixel predictions from a flow pre- dictor for non-occluded regions and from a context encoder for occluded regions. Moreover, in contrast to prior works where confidence is jointly learned with flow and appear- ance using a single network, we compute confidence after a warping step, and employ a separate network to inpaint exposed regions. Empirical results on both synthetic and real datasets show that our disentangling approach pro- vides better occlusion maps and produces both sharper and more realistic predictions compared to strong baselines.</td>
+</tr>
+<tr id="bib_Gao_2019_ICCV" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Gao_2019_ICCV,
+  author = {Gao, Hang and Xu, Huazhe and Cai, Qi-Zhi and Wang, Ruth and Yu, Fisher and Darrell, Trevor},
+  title = {Disentangling Propagation and Generation for Video Prediction},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+  year = {2019},
+  url = {https://openaccess.thecvf.com/content_ICCV_2019/papers/Gao_Disentangling_Propagation_and_Generation_for_Video_Prediction_ICCV_2019_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="Liang_2017_ICCV" class="entry">
+	<td>Liang, X., Lee, L., Dai, W. and Xing, E.P.</td>
+	<td>Dual Motion GAN for Future-Flow Embedded Video Prediction <p class="infolinks">[<a href="javascript:toggleInfo('Liang_2017_ICCV','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>The IEEE International Conference on Computer Vision (ICCV)&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://arxiv.org/abs/1708.00284">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_Liang_2017_ICCV" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Liang_2017_ICCV,
+  author = {Liang, Xiaodan and Lee, Lisa and Dai, Wei and Xing, Eric P.},
+  title = {Dual Motion GAN for Future-Flow Embedded Video Prediction},
+  booktitle = {The IEEE International Conference on Computer Vision (ICCV)},
+  year = {2017},
+  url = {https://arxiv.org/abs/1708.00284}
+}
+</pre></td>
+</tr>
+<tr id="hu2018early" class="entry">
+	<td>Hu, J.-F., Zheng, W.-S., Ma, L., Wang, G., Lai, J. and Zhang, J.</td>
+	<td>Early action prediction by soft regression <p class="infolinks">[<a href="javascript:toggleInfo('hu2018early','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('hu2018early','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>IEEE transactions on pattern analysis and machine intelligence<br/>Vol. 41(11), pp. 2568-2583&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8425794">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_hu2018early" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We propose a novel approach for predicting on-going action with the assistance of a low-cost depth camera. Our approach introduces a soft regression-based early prediction framework. In this framework, we estimate soft labels for the subsequences at different progress levels, jointly learned with an action predictor. Our formulation of soft regression framework 1) overcomes a usual assumption in existing early action prediction systems that the progress level of on-going sequence is given in the testing stage; and 2) presents a theoretical framework to better resolve the ambiguity and uncertainty of subsequences at early performing stage. The proposed soft regression framework is further enhanced in order to take the relationships among subsequences and the discrepancy of soft labels over different classes into consideration, so that a Multiple Soft labels Recurrent Neural Network (MSRNN) is finally developed. For real-time performance, we also introduce a new RGB-D feature called “local accumulative frame feature (LAFF)”, which can be computed efficiently by constructing an integral feature map. Our experiments on three RGB-D benchmark datasets and an unconstrained RGB action set demonstrate that the proposed regression-based early action prediction model outperforms existing models significantly and also show that the early action prediction on RGB-D sequence is more accurate than that on RGB channel.</td>
+</tr>
+<tr id="bib_hu2018early" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{hu2018early,
+  author = {Hu, Jian-Fang and Zheng, Wei-Shi and Ma, Lianyang and Wang, Gang and Lai, Jianhuang and Zhang, Jianguo},
+  title = {Early action prediction by soft regression},
+  journal = {IEEE transactions on pattern analysis and machine intelligence},
+  publisher = {IEEE},
+  year = {2018},
+  volume = {41},
+  number = {11},
+  pages = {2568--2583},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=8425794}
+}
+</pre></td>
+</tr>
+<tr id="article" class="entry">
+	<td>Gite, S., Agrawal, H. and Kotecha, K.</td>
+	<td>Early anticipation of driver’s maneuver in semiautonomous vehicles using deep learning <p class="infolinks">[<a href="javascript:toggleInfo('article','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Progress in Artificial Intelligence<br/>Vol. 8&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1007/s13748-019-00177-z">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_article" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{article,
+  author = {Gite, Shilpa and Agrawal, Himanshu and Kotecha, Ketan},
+  title = {Early anticipation of driver’s maneuver in semiautonomous vehicles using deep learning},
+  journal = {Progress in Artificial Intelligence},
+  year = {2019},
+  volume = {8},
+  doi = {https://doi.org/10.1007/s13748-019-00177-z}
+}
+</pre></td>
+</tr>
+<tr id="furnari2019egocentric" class="entry">
+	<td>Furnari, A. and Farinella, G.M.</td>
+	<td>Egocentric Action Anticipation by Disentangling Encoding and Inference <p class="infolinks">[<a href="javascript:toggleInfo('furnari2019egocentric','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>2019 IEEE International Conference on Image Processing (ICIP), pp. 3357-3361&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICIP.2019.8803534">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_furnari2019egocentric" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{furnari2019egocentric,
+  author = {Furnari, Antonino and Farinella, Giovanni Maria},
+  title = {Egocentric Action Anticipation by Disentangling Encoding and Inference},
+  booktitle = {2019 IEEE International Conference on Image Processing (ICIP)},
+  year = {2019},
+  pages = {3357--3361},
+  doi = {https://doi.org/10.1109/ICIP.2019.8803534}
+}
+</pre></td>
+</tr>
+<tr id="Aliakbarian_2017_ICCV" class="entry">
+	<td>Sadegh Aliakbarian, M., Sadat Saleh, F., Salzmann, M., Fernando, B., Petersson, L. and Andersson, L.</td>
+	<td>Encouraging LSTMs to Anticipate Actions Very Early <p class="infolinks">[<a href="javascript:toggleInfo('Aliakbarian_2017_ICCV','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Aliakbarian_2017_ICCV','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>Proceedings of the IEEE International Conference on Computer Vision (ICCV)&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ICCV_2017/papers/Aliakbarian_Encouraging_LSTMs_to_ICCV_2017_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_Aliakbarian_2017_ICCV" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: In contrast to the widely studied problem of recogniz- ing an action given a complete sequence, action anticipa- tion aims to identify the action from only partially available videos. As such, it is therefore key to the success of com- puter vision applications requiring to react as early as pos- sible, such as autonomous navigation. In this paper, we pro- pose a new action anticipation method that achieves high prediction accuracy even in the presence of a very small percentage of a video sequence. To this end, we develop a multi-stage LSTM architecture that leverages context-aware and action-aware features, and introduce a novel loss func- tion that encourages the model to predict the correct class as early as possible. Our experiments on standard bench- mark datasets evidence the benefits of our approach; We outperform the state-of-the-art action anticipation methods for early prediction by a relative increase in accuracy of 22.0% on JHMDB-21, 14.0% on UT-Interaction and 49.9% on UCF-101.</td>
+</tr>
+<tr id="bib_Aliakbarian_2017_ICCV" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Aliakbarian_2017_ICCV,
+  author = {Sadegh Aliakbarian, Mohammad and Sadat Saleh, Fatemeh and Salzmann, Mathieu and Fernando, Basura and Petersson, Lars and Andersson, Lars},
+  title = {Encouraging LSTMs to Anticipate Actions Very Early},
+  booktitle = {Proceedings of the IEEE International Conference on Computer Vision (ICCV)},
+  year = {2017},
+  url = {https://openaccess.thecvf.com/content_ICCV_2017/papers/Aliakbarian_Encouraging_LSTMs_to_ICCV_2017_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="wang2019exploring" class="entry">
+	<td>Wang, C., Ma, L., Li, R., Durrani, T.S. and Zhang, H.</td>
+	<td>Exploring trajectory prediction through machine learning methods <p class="infolinks">[<a href="javascript:toggleInfo('wang2019exploring','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('wang2019exploring','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>IEEE Access<br/>Vol. 7, pp. 101441-101452&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8766820">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_wang2019exploring" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We consider the problem of predicting the future trajectory of scene agents from egocentric views obtained from a moving platform. This problem is important in a variety of domains, particularly for autonomous systems making reactive or strategic decisions in navigation. In an attempt to address this problem, we introduce TITAN (Trajectory Inference using Targeted Action priors Network), a new model that incorporates prior positions, actions, and context to forecast future trajectory of agents and future ego-motion. In the absence of an appropriate dataset for this task, we created the TITAN dataset that consists of 700 labeled video-clips (with odometry) captured from a moving vehicle on highly interactive urban traffic scenes in Tokyo. Our dataset includes 50 labels including vehicle states and actions, pedestrian age groups, and targeted pedestrian action attributes that are organized hierarchically corresponding to atomic, simple/complex-contextual, transportive, and communicative actions. To evaluate our model, we conducted extensive experiments on the TITAN dataset, revealing significant performance improvement against baselines and state-of-the-art algorithms. We also report promising results from our Agent Importance Mechanism (AIM), a module which provides insight into assessment of perceived risk by calculating the relative influence of each agent on the future ego-trajectory. The dataset is available at https://usa.honda-ri.com/titan</td>
+</tr>
+<tr id="bib_wang2019exploring" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{wang2019exploring,
+  author = {Wang, Chujie and Ma, Lin and Li, Rongpeng and Durrani, Tariq S and Zhang, Honggang},
+  title = {Exploring trajectory prediction through machine learning methods},
+  journal = {IEEE Access},
+  publisher = {IEEE},
+  year = {2019},
+  volume = {7},
+  pages = {101441--101452},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=8766820}
+}
+</pre></td>
+</tr>
+<tr id="8014802" class="entry">
+	<td>Lawson, W., Bekele, E. and Sullivan, K.</td>
+	<td>Finding Anomalies with Generative Adversarial Networks for a Patrolbot <p class="infolinks">[<a href="javascript:toggleInfo('8014802','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>2017 IEEE Conference on Computer Vision and Pattern Recognition Workshops (CVPRW), pp. 484-485&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://ieeexplore.ieee.org/abstract/document/8014802?section=abstract">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_8014802" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{8014802,
+  author = {W. Lawson and E. Bekele and K. Sullivan},
+  title = {Finding Anomalies with Generative Adversarial Networks for a Patrolbot},
+  booktitle = {2017 IEEE Conference on Computer Vision and Pattern Recognition Workshops (CVPRW)},
+  year = {2017},
+  pages = {484-485},
+  url = {https://ieeexplore.ieee.org/abstract/document/8014802?section=abstract}
+}
+</pre></td>
+</tr>
+<tr id="Li_2018_ECCV" class="entry">
+	<td>Li, Y., Fang, C., Yang, J., Wang, Z., Lu, X. and Yang, M.-H.</td>
+	<td>Flow-Grounded Spatial-Temporal Video Prediction from Still Images <p class="infolinks">[<a href="javascript:toggleInfo('Li_2018_ECCV','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Li_2018_ECCV','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>Proceedings of the European Conference on Computer Vision (ECCV)&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ECCV_2018/papers/Yijun_Li_Flow-Grounded_Spatial-Temporal_Video_ECCV_2018_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_Li_2018_ECCV" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Existing video prediction methods mainly rely on observing multiple historical frames or focus on predicting the next one-frame. In this work, we study the problem of generating consecutive multiple fu- ture frames by observing one single still image only. We formulate the multi-frame prediction task as a multiple time step flow (multi-flow) pre- diction phase followed by a flow-to-frame synthesis phase. The multi-flow prediction is modeled in a variational probabilistic manner with spatial- temporal relationships learned through 3D convolutions. The flow-to- frame synthesis is modeled as a generative process in order to keep the predicted results lying closer to the manifold shape of real video sequence. Such a two-phase design prevents the model from directly looking at the high-dimensional pixel space of the frame sequence and is demonstrated to be more effective in predicting better and diverse results. Extensive experimental results on videos with different types of motion show that the proposed algorithm performs favorably against existing methods in terms of quality, diversity and human perceptual evaluation.<br>Keywords: Future prediction, conditional variational autoencoder, 3D convolutions.</td>
+</tr>
+<tr id="bib_Li_2018_ECCV" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Li_2018_ECCV,
+  author = {Li, Yijun and Fang, Chen and Yang, Jimei and Wang, Zhaowen and Lu, Xin and Yang, Ming-Hsuan},
+  title = {Flow-Grounded Spatial-Temporal Video Prediction from Still Images},
+  booktitle = {Proceedings of the European Conference on Computer Vision (ECCV)},
+  year = {2018},
+  url = {https://openaccess.thecvf.com/content_ECCV_2018/papers/Yijun_Li_Flow-Grounded_Spatial-Temporal_Video_ECCV_2018_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="gammulle2019forecasting" class="entry">
+	<td>Gammulle, H., Denman, S., Sridharan, S. and Fookes, C.</td>
+	<td>Forecasting future action sequences with neural memory networks <p class="infolinks">[<a href="javascript:toggleInfo('gammulle2019forecasting','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>arXiv preprint arXiv:1909.09278&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/1909.09278.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_gammulle2019forecasting" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{gammulle2019forecasting,
+  author = {Gammulle, Harshala and Denman, Simon and Sridharan, Sridha and Fookes, Clinton},
+  title = {Forecasting future action sequences with neural memory networks},
+  journal = {arXiv preprint arXiv:1909.09278},
+  year = {2019},
+  url = {https://arxiv.org/pdf/1909.09278.pdf}
+}
+</pre></td>
+</tr>
+<tr id="liu2018future" class="entry">
+	<td>Liu, W., Luo, W., Lian, D. and Gao, S.</td>
+	<td>Future frame prediction for anomaly detection--a new baseline <p class="infolinks">[<a href="javascript:toggleInfo('liu2018future','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('liu2018future','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 6536-6545&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_cvpr_2018/papers/Liu_Future_Frame_Prediction_CVPR_2018_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_liu2018future" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Anomaly detection in videos refers to the identification of events that do not conform to expected behavior. However, almost all existing methods tackle the problem by minimizing the reconstruction errors of training data, which cannot guarantee a larger reconstruction error for an abnormal event. In this paper, we propose to tackle the anomaly detection problem within a video prediction framework. To the best of our knowledge, this is the first work that leverages the difference between a predicted future frame and its ground truth to detect an abnormal event. To predict a future frame with higher quality for normal events, other than the commonly used appearance (spatial) constraints on intensity and gradient, we also introduce a motion (temporal) constraint in video prediction by enforcing the optical flow between predicted frames and ground truth frames to be consistent, and this is the first work that introduces a temporal constraint into the video prediction task. Such spatial and motion constraints facilitate the future frame prediction for normal events, and consequently facilitate to identify those abnormal events that do not conform the expectation. Extensive experiments on both a toy dataset and some publicly available datasets validate the effectiveness of our method in terms of robustness to the uncertainty in normal events and the sensitivity to abnormal events.</td>
+</tr>
+<tr id="bib_liu2018future" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{liu2018future,
+  author = {Liu, Wen and Luo, Weixin and Lian, Dongze and Gao, Shenghua},
+  title = {Future frame prediction for anomaly detection--a new baseline},
+  booktitle = {Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
+  year = {2018},
+  pages = {6536--6545},
+  url = {https://openaccess.thecvf.com/content_cvpr_2018/papers/Liu_Future_Frame_Prediction_CVPR_2018_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="kaur2020future" class="entry">
+	<td>Kaur, J. and Das, S.</td>
+	<td>Future Frame Prediction of a Video Sequence <p class="infolinks">[<a href="javascript:toggleInfo('kaur2020future','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>arXiv preprint arXiv:2009.01689&nbsp;</td>
+	<td>misc</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="bib_kaur2020future" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@misc{kaur2020future,
+  author = {Jasmeen Kaur and Sukhendu Das},
+  title = {Future Frame Prediction of a Video Sequence},
+  journal = {arXiv preprint arXiv:2009.01689},
+  year = {2020}
+}
+</pre></td>
+</tr>
+<tr id="herath2017going" class="entry">
+	<td>Herath, S., Harandi, M. and Porikli, F.</td>
+	<td>Going deeper into action recognition: A survey <p class="infolinks">[<a href="javascript:toggleInfo('herath2017going','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>Image and vision computing<br/>Vol. 60, pp. 4-21&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8766820">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_herath2017going" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{herath2017going,
+  author = {Herath, Samitha and Harandi, Mehrtash and Porikli, Fatih},
+  title = {Going deeper into action recognition: A survey},
+  journal = {Image and vision computing},
+  publisher = {Elsevier},
+  year = {2017},
+  volume = {60},
+  pages = {4--21},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=8766820}
+}
+</pre></td>
+</tr>
+<tr id="wichers2018hierarchical" class="entry">
+	<td>Wichers, N., Villegas, R., Erhan, D. and Lee, H.</td>
+	<td>Hierarchical long-term video prediction without supervision <p class="infolinks">[<a href="javascript:toggleInfo('wichers2018hierarchical','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('wichers2018hierarchical','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>arXiv preprint arXiv:1806.04768&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/1806.04768.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_wichers2018hierarchical" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Much of recent research has been devoted to video prediction and generation, yet most of the previ- ous works have demonstrated only limited success in generating videos on short-term horizons. The hierarchical video prediction method by Villegas et al. (2017b) is an example of a state-of-the-art method for long-term video prediction, but their method is limited because it requires ground truth annotation of high-level structures (e.g., human joint landmarks) at training time. Our network encodes the input frame, predicts a high-level en- coding into the future, and then a decoder with access to the first frame produces the predicted image from the predicted encoding. The decoder also produces a mask that outlines the predicted foreground object (e.g., person) as a by-product. Unlike Villegas et al. (2017b), we develop a novel training method that jointly trains the encoder, the predictor, and the decoder together without high- level supervision; we further improve upon this by using an adversarial loss in the feature space to train the predictor. Our method can predict about 20 seconds into the future and provides better re- sults compared to Denton and Fergus (2018) and Finn et al. (2016) on the Human 3.6M dataset.</td>
+</tr>
+<tr id="bib_wichers2018hierarchical" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{wichers2018hierarchical,
+  author = {Wichers, Nevan and Villegas, Ruben and Erhan, Dumitru and Lee, Honglak},
+  title = {Hierarchical long-term video prediction without supervision},
+  journal = {arXiv preprint arXiv:1806.04768},
+  year = {2018},
+  url = {https://arxiv.org/pdf/1806.04768.pdf}
+}
+</pre></td>
+</tr>
+<tr id="kong2018human" class="entry">
+	<td>Kong, Y. and Fu, Y.</td>
+	<td>Human Action Recognition and Prediction: A Survey <p class="infolinks">[<a href="javascript:toggleInfo('kong2018human','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>arXiv preprint arXiv:1806.11230&nbsp;</td>
+	<td>misc</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="bib_kong2018human" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@misc{kong2018human,
+  author = {Yu Kong and Yun Fu},
+  title = {Human Action Recognition and Prediction: A Survey},
+  journal = {arXiv preprint arXiv:1806.11230},
+  year = {2018}
+}
+</pre></td>
+</tr>
+<tr id="hernandez2019human" class="entry">
+	<td>Hernandez, A., Gall, J. and Moreno-Noguer, F.</td>
+	<td>Human motion prediction via spatio-temporal inpainting <p class="infolinks">[<a href="javascript:toggleInfo('hernandez2019human','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('hernandez2019human','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Proceedings of the IEEE International Conference on Computer Vision, pp. 7134-7143&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ICCV_2019/papers/Hernandez_Human_Motion_Prediction_via_Spatio-Temporal_Inpainting_ICCV_2019_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_hernandez2019human" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We propose a Generative Adversarial Network (GAN) to forecast 3D human motion given a sequence of past 3D skeleton poses. While recent GANs have shown promising results, they can only forecast plausible motion over relatively short periods of time (few hundred milliseconds) and typically ignore the absolute position of the skeleton w.r.t. the camera. Our scheme provides long term predictions (two seconds or more) for both the body pose and its absolute position. Our approach builds upon three main contributions. First, we represent the data using a spatio-temporal tensor of 3D skeleton coordinates which allows formulating the prediction problem as an inpainting one, for which GANs work particularly well. Secondly, we design an architecture to learn the joint distribution of body poses and global motion, capable to hypothesize large chunks of the input 3D tensor with missing data. And finally, we argue that the L2 metric, considered so far by most approaches, fails to capture the actual distribution of long-term human motion. We propose two alternative metrics, based on the distribution of frequencies, that are able to capture more realistic motion patterns. Extensive experiments demonstrate our approach to significantly improve the state of the art, while also handling situations in which past observations are corrupted by occlusions, noise and missing frames.</td>
+</tr>
+<tr id="bib_hernandez2019human" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{hernandez2019human,
+  author = {Hernandez, Alejandro and Gall, Jurgen and Moreno-Noguer, Francesc},
+  title = {Human motion prediction via spatio-temporal inpainting},
+  booktitle = {Proceedings of the IEEE International Conference on Computer Vision},
+  year = {2019},
+  pages = {7134--7143},
+  url = {https://openaccess.thecvf.com/content_ICCV_2019/papers/Hernandez_Human_Motion_Prediction_via_Spatio-Temporal_Inpainting_ICCV_2019_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="rudenko2020human" class="entry">
+	<td>Rudenko, A., Palmieri, L., Herman, M., Kitani, K.M., Gavrila, D.M. and Arras, K.O.</td>
+	<td>Human motion trajectory prediction: A survey <p class="infolinks">[<a href="javascript:toggleInfo('rudenko2020human','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>The International Journal of Robotics Research<br/>Vol. 39(8), pp. 895-935&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://www.sciencedirect.com/science/article/abs/pii/S0262885617300343">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_rudenko2020human" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{rudenko2020human,
+  author = {Rudenko, Andrey and Palmieri, Luigi and Herman, Michael and Kitani, Kris M and Gavrila, Dariu M and Arras, Kai O},
+  title = {Human motion trajectory prediction: A survey},
+  journal = {The International Journal of Robotics Research},
+  publisher = {Sage Publications Sage UK: London, England},
+  year = {2020},
+  volume = {39},
+  number = {8},
+  pages = {895--935},
+  url = {https://www.sciencedirect.com/science/article/abs/pii/S0262885617300343}
+}
+</pre></td>
+</tr>
+<tr id="h36m_pami" class="entry">
+	<td>Ionescu, C., Papava, D., Olaru, V. and Sminchisescu, C.</td>
+	<td>Human3.6M: Large Scale Datasets and Predictive Methods for 3D Human Sensing in Natural Environments <p class="infolinks">[<a href="javascript:toggleInfo('h36m_pami','bibtex')">BibTeX</a>]</p></td>
+	<td>2014</td>
+	<td>IEEE Transactions on Pattern Analysis and Machine Intelligence<br/>Vol. 36(7), pp. 1325-1339&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1109/TPAMI.2013.248">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_h36m_pami" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{h36m_pami,
+  author = {Ionescu, Catalin and Papava, Dragos and Olaru, Vlad and Sminchisescu, Cristian},
+  title = {Human3.6M: Large Scale Datasets and Predictive Methods for 3D Human Sensing in Natural Environments},
+  journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  publisher = {IEEE Computer Society},
+  year = {2014},
+  volume = {36},
+  number = {7},
+  pages = {1325-1339},
+  doi = {https://doi.org/10.1109/TPAMI.2013.248}
+}
+</pre></td>
+</tr>
+<tr id="5596999" class="entry">
+	<td>Horé, A. and Ziou, D.</td>
+	<td>Image Quality Metrics: PSNR vs. SSIM <p class="infolinks">[<a href="javascript:toggleInfo('5596999','bibtex')">BibTeX</a>]</p></td>
+	<td>2010</td>
+	<td>2010 20th International Conference on Pattern Recognition, pp. 2366-2369&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICPR.2010.579">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_5596999" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{5596999,
+  author = {A. Horé and D. Ziou},
+  title = {Image Quality Metrics: PSNR vs. SSIM},
+  booktitle = {2010 20th International Conference on Pattern Recognition},
+  year = {2010},
+  pages = {2366-2369},
+  doi = {https://doi.org/10.1109/ICPR.2010.579}
+}
+</pre></td>
+</tr>
+<tr id="berg2010large" class="entry">
+	<td>Berg, A., Deng, J. and Fei-Fei, L.</td>
+	<td>ImageNet Large scale visual recognition challenge 2010 <p class="infolinks">[<a href="javascript:toggleInfo('berg2010large','bibtex')">BibTeX</a>]</p></td>
+	<td>2010</td>
+	<td>International journal of computer vision&nbsp;</td>
+	<td>misc</td>
+	<td><a href="http://www.image-net.org/challenges/LSVRC/2010/">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_berg2010large" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@misc{berg2010large,
+  author = {Berg, Alex and Deng, Jia and Fei-Fei, L},
+  title = {ImageNet Large scale visual recognition challenge 2010},
+  journal = {International journal of computer vision},
+  year = {2010},
+  url = {http://www.image-net.org/challenges/LSVRC/2010/}
+}
+</pre></td>
+</tr>
+<tr id="castrejon2019improved" class="entry">
+	<td>Castrejon, L., Ballas, N. and Courville, A.</td>
+	<td>Improved conditional vrnns for video prediction <p class="infolinks">[<a href="javascript:toggleInfo('castrejon2019improved','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('castrejon2019improved','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Proceedings of the IEEE International Conference on Computer Vision, pp. 7608-7617&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ICCV_2019/papers/Castrejon_Improved_Conditional_VRNNs_for_Video_Prediction_ICCV_2019_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_castrejon2019improved" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Predicting future frames for a video sequence is a chal- lenging generative modeling task. Promising approaches include probabilistic latent variable models such as the Variational Auto-Encoder. While VAEs can handle uncer- tainty and model multiple possible future outcomes, they have a tendency to produce blurry predictions. In this work we argue that this is a sign of underfitting. To address this issue, we propose to increase the expressiveness of the latent distributions and to use higher capacity likelihood models. Our approach relies on a hierarchy of latent vari- ables, which defines a family of flexible prior and poste- rior distributions in order to better model the probability of future sequences. We validate our proposal through a se- ries of ablation experiments and compare our approach to current state-of-the-art latent variable models. Our method performs favorably under several metrics in three different datasets.</td>
+</tr>
+<tr id="bib_castrejon2019improved" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{castrejon2019improved,
+  author = {Castrejon, Lluis and Ballas, Nicolas and Courville, Aaron},
+  title = {Improved conditional vrnns for video prediction},
+  booktitle = {Proceedings of the IEEE International Conference on Computer Vision},
+  year = {2019},
+  pages = {7608--7617},
+  url = {https://openaccess.thecvf.com/content_ICCV_2019/papers/Castrejon_Improved_Conditional_VRNNs_for_Video_Prediction_ICCV_2019_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="hosseini2019inception" class="entry">
+	<td>Hosseini, M., Maida, A.S., Hosseini, M. and Raju, G.</td>
+	<td>Inception-inspired LSTM for Next-frame Video Prediction <p class="infolinks">[<a href="javascript:toggleInfo('hosseini2019inception','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('hosseini2019inception','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>arXiv preprint arXiv:1909.05622&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/1909.05622.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_hosseini2019inception" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The problem of video frame prediction has received much interest due to its relevance to many com- puter vision applications such as autonomous ve- hicles or robotics. Supervised methods for video frame prediction rely on labeled data, which may not always be available. In this paper, we pro- vide a novel self-supervised deep-learning method called Inception-based LSTM for video frame pre- diction. The general idea of inception networks is to implement wider networks instead of deeper networks. This network design was shown to im- prove the performance of image classification. The proposed method is evaluated on both Inception-v1 and Inception-v2 structures. The proposed Incep- tion LSTM methods are compared with convolu- tional LSTM when applied using PredNet predic- tive coding framework for both the KITTI and KTH data sets. We observed that the Inception based LSTM outperforms the convolutional LSTM. Also, Inception LSTM has better prediction performance compared to Inception v2 LSTM. However, Incep- tion v2 LSTM has a lower computational cost com- pared to Inception LSTM.<br>Keywords: Inception LSTM, Convolutional LSTM, Predictive coding, next-frame video prediction.</td>
+</tr>
+<tr id="bib_hosseini2019inception" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{hosseini2019inception,
+  author = {Hosseini, Matin and Maida, Anthony S and Hosseini, Majid and Raju, Gottumukkala},
+  title = {Inception-inspired LSTM for Next-frame Video Prediction},
+  journal = {arXiv preprint arXiv:1909.05622},
+  year = {2019},
+  url = {https://arxiv.org/pdf/1909.05622.pdf}
+}
+</pre></td>
+</tr>
+<tr id="xin2018intention" class="entry">
+	<td>Xin, L., Wang, P., Chan, C.-Y., Chen, J., Li, S.E. and Cheng, B.</td>
+	<td>Intention-aware long horizon trajectory prediction of surrounding vehicles using dual lstm networks <p class="infolinks">[<a href="javascript:toggleInfo('xin2018intention','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('xin2018intention','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>2018 21st International Conference on Intelligent Transportation Systems (ITSC), pp. 1441-1446&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8569595">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_xin2018intention" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: As autonomous vehicles (AVs) need to interact with other road users, it is of importance to comprehensively understand the dynamic traffic environment, especially the future possible trajectories of surrounding vehicles. This paper presents an algorithm for long-horizon trajectory prediction of surrounding vehicles using a dual long short term memory (LSTM) network, which is capable of effectively improving prediction accuracy in strongly interactive driving environments. In contrast to traditional approaches which require trajectory matching and manual feature selection, this method can automatically learn high-level spatial-temporal features of driver behaviors from naturalistic driving data through sequence learning. By employing two blocks of LSTMs, the proposed method feeds the sequential trajectory to the first LSTM for driver intention recognition as an intermediate indicator, which is immediately followed by a second LSTM for future trajectory prediction. Test results from real-world highway driving data show that the proposed method can, in comparison to state-of-art methods, output more accurate and reasonable estimate of different future trajectories over 5s time horizon with root mean square error (RMSE) for longitudinal and lateral prediction less than 5.77m and 0.49m, respectively</td>
+</tr>
+<tr id="bib_xin2018intention" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{xin2018intention,
+  author = {Xin, Long and Wang, Pin and Chan, Ching-Yao and Chen, Jianyu and Li, Shengbo Eben and Cheng, Bo},
+  title = {Intention-aware long horizon trajectory prediction of surrounding vehicles using dual lstm networks},
+  booktitle = {2018 21st International Conference on Intelligent Transportation Systems (ITSC)},
+  year = {2018},
+  pages = {1441--1446},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=8569595}
+}
+</pre></td>
+</tr>
+<tr id="hung2019intention" class="entry">
+	<td>Hung, F., Xie, X., Fuchs, A., Walton, M., Qi, S., Zhu, Y., Lange, D. and Zhu, S.-C.</td>
+	<td>Intention-based Behavioral Anomaly Detection <p class="infolinks">[<a href="javascript:toggleInfo('hung2019intention','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://xuxie1031.github.io/resources/aaaiw19hung.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_hung2019intention" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{hung2019intention,
+  author = {Hung, Fan and Xie, Xu and Fuchs, Andrew and Walton, Michael and Qi, Siyuan and Zhu, Yixin and Lange, Doug and Zhu, Song-Chun},
+  title = {Intention-based Behavioral Anomaly Detection},
+  year = {2019},
+  url = {https://xuxie1031.github.io/resources/aaaiw19hung.pdf}
+}
+</pre></td>
+</tr>
+<tr id="villegas2017learning" class="entry">
+	<td>Villegas, R., Yang, J., Zou, Y., Sohn, S., Lin, X. and Lee, H.</td>
+	<td>Learning to generate long-term future via hierarchical prediction <p class="infolinks">[<a href="javascript:toggleInfo('villegas2017learning','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('villegas2017learning','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>arXiv preprint arXiv:1704.05831&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/1704.05831.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_villegas2017learning" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We propose a hierarchical approach for making long-term predictions of future frames. To avoid inherent compounding errors in recursive pixel-level prediction, we propose to first estimate high-level structure in the input frames, then predict how that structure evolves in the future, and finally by observing a single frame from the past and the predicted high-level structure, we construct the future frames without having to observe any of the pixel-level predictions. Long-term video prediction is difficult to perform by recurrently observing the predicted frames because the small errors in pixel space exponentially amplify as predictions are made deeper into the future. Our approach prevents pixel-level error propagation from happening by removing the need to observe the predicted frames. Our model is built with a combination of LSTM and analogy based encoder-decoder convolutional neural networks, which independently predict the video structure and generate the future frames, respectively. In experiments, our model is evaluated on the Human3.6M and Penn Action datasets on the task of long-term pixel-level video prediction of humans performing actions and demonstrate significantly better results than the state-of-the-art.</td>
+</tr>
+<tr id="bib_villegas2017learning" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{villegas2017learning,
+  author = {Villegas, Ruben and Yang, Jimei and Zou, Yuliang and Sohn, Sungryull and Lin, Xunyu and Lee, Honglak},
+  title = {Learning to generate long-term future via hierarchical prediction},
+  journal = {arXiv preprint arXiv:1704.05831},
+  year = {2017},
+  url = {https://arxiv.org/pdf/1704.05831.pdf}
+}
+</pre></td>
+</tr>
+<tr id="hermes2011manifold" class="entry">
+	<td>Hermes, C., Wiest, J., W&ouml;hler, C., Kre&szlig;el, U. and Kummert, F.</td>
+	<td>Manifold-based motion prediction <p class="infolinks">[<a href="javascript:toggleInfo('hermes2011manifold','bibtex')">BibTeX</a>]</p></td>
+	<td>2011</td>
+	<td>Proc. 6. Dortmunder Auto-Tag. Dortmund, Germany&nbsp;</td>
+	<td>article</td>
+	<td><a href="http://www.hausmilbe.net/Publications/files/Hermes11.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_hermes2011manifold" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{hermes2011manifold,
+  author = {Hermes, Christoph and Wiest, J&uuml;rgen and W&ouml;hler, Christian and Kre&szlig;el, Ulrich and Kummert, Franz},
+  title = {Manifold-based motion prediction},
+  journal = {Proc. 6. Dortmunder Auto-Tag. Dortmund, Germany},
+  year = {2011},
+  url = {http://www.hausmilbe.net/Publications/files/Hermes11.pdf}
+}
+</pre></td>
+</tr>
+<tr id="xie2020motion" class="entry">
+	<td>Xie, G., Shangguan, A., Fei, R., Ji, W., Ma, W. and Hei, X.</td>
+	<td>Motion trajectory prediction based on a CNN-LSTM sequential model <p class="infolinks">[<a href="javascript:toggleInfo('xie2020motion','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('xie2020motion','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>Science China Information Sciences<br/>Vol. 63(11), pp. 1-21&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://link.springer.com/article/10.1007/s11432-019-2761-y">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_xie2020motion" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Accurate monitoring the surrounding environment is an important research direction in the field of unmanned systems such as bio-robotics, and has attracted much research attention in recent years. The trajectories of surrounding vehicles should be predicted accurately in space and time to realize active defense and running safety of an unmanned system. However, there is uncertainty and uncontrollability in the process of trajectory prediction of surrounding obstacles. In this study, we propose a trajectory prediction method based on a sequential model, that fuses two neural networks of a convolutional neural network (CNN) and a long short-term memory network (LSTM). First, a box plot is used to detect and eliminate abnormal values of vehicle trajectories, and valid trajectory data are obtained. Second, the trajectories of surrounding vehicles are predicted by merging the characteristics of CNN space expansion and LSTM time expansion; the hyper-parameters of the model are optimized according to a grid search algorithm, which satisfies the double-precision prediction requirement in space and time. Finally, data from next generation simulation (NGSIM) and Creteil roundabout in France are taken as test cases; the correctness and rationality of the method are verified by prediction error indicators. Experimental results demonstrate that the proposed CNN-LSTM method is more accurate and features a shorter time cost, which meets the prediction requirements and provides an effective method for the safe operation of unmanned systems.</td>
+</tr>
+<tr id="bib_xie2020motion" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{xie2020motion,
+  author = {Xie, Guo and Shangguan, Anqi and Fei, Rong and Ji, Wenjiang and Ma, Weigang and Hei, Xinhong},
+  title = {Motion trajectory prediction based on a CNN-LSTM sequential model},
+  journal = {Science China Information Sciences},
+  publisher = {Springer},
+  year = {2020},
+  volume = {63},
+  number = {11},
+  pages = {1--21},
+  url = {https://link.springer.com/article/10.1007/s11432-019-2761-y}
+}
+</pre></td>
+</tr>
+<tr id="deo2018multi" class="entry">
+	<td>Deo, N. and Trivedi, M.M.</td>
+	<td>Multi-modal trajectory prediction of surrounding vehicles with maneuver based lstms <p class="infolinks">[<a href="javascript:toggleInfo('deo2018multi','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>2018 IEEE Intelligent Vehicles Symposium (IV), pp. 1179-1184&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://arxiv.org/pdf/1805.05499.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_deo2018multi" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{deo2018multi,
+  author = {Deo, Nachiket and Trivedi, Mohan M},
+  title = {Multi-modal trajectory prediction of surrounding vehicles with maneuver based lstms},
+  booktitle = {2018 IEEE Intelligent Vehicles Symposium (IV)},
+  year = {2018},
+  pages = {1179--1184},
+  url = {https://arxiv.org/pdf/1805.05499.pdf}
+}
+</pre></td>
+</tr>
+<tr id="galceran2015multipolicy" class="entry">
+	<td>Galceran, E., Cunningham, A.G., Eustice, R.M. and Olson, E.</td>
+	<td>Multipolicy Decision-Making for Autonomous Driving via Changepoint-based Behavior Prediction. <p class="infolinks">[<a href="javascript:toggleInfo('galceran2015multipolicy','bibtex')">BibTeX</a>]</p></td>
+	<td>2015</td>
+	<td><br/>Vol. 1(2)Robotics: Science and Systems&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://link.springer.com/article/10.1007/s10514-017-9619-z">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_galceran2015multipolicy" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{galceran2015multipolicy,
+  author = {Galceran, Enric and Cunningham, Alexander G and Eustice, Ryan M and Olson, Edwin},
+  title = {Multipolicy Decision-Making for Autonomous Driving via Changepoint-based Behavior Prediction.},
+  booktitle = {Robotics: Science and Systems},
+  year = {2015},
+  volume = {1},
+  number = {2},
+  url = {https://link.springer.com/article/10.1007/s10514-017-9619-z}
+}
+</pre></td>
+</tr>
+<tr id="vukotic2017one" class="entry">
+	<td>Vukoti&cacute;, V., Pintea, S.-L., Raymond, C., Gravier, G. and Van Gemert, J.C.</td>
+	<td>One-step time-dependent future video frame prediction with a convolutional encoder-decoder neural network <p class="infolinks">[<a href="javascript:toggleInfo('vukotic2017one','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('vukotic2017one','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>International Conference on Image Analysis and Processing, pp. 140-151&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://link.springer.com/chapter/10.1007/978-3-319-68560-1_13">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_vukotic2017one" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: There is an inherent need for autonomous cars, drones, and other robots to have a notion of how their environment behaves and to anticipate changes in the near future. In this work, we focus on anticipating future appearance given the current frame of a video. Existing work focuses on either predicting the future appearance as the next frame of a video, or predicting future motion as optical flow or motion trajectories starting from a single video frame. This work stretches the ability of CNNs (Convolutional Neural Networks) to predict an anticipation of appearance at an arbitrarily given future time, not necessarily the next video frame. We condition our predicted future appearance on a continuous time variable that allows us to anticipate future frames at a given temporal distance, directly from the input video frame. We show that CNNs can learn an intrinsic representation of typical appearance changes over time and successfully generate realistic predictions at a deliberate time difference in the near future.</td>
+</tr>
+<tr id="bib_vukotic2017one" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{vukotic2017one,
+  author = {Vukoti&cacute;, Vedran and Pintea, Silvia-Laura and Raymond, Christian and Gravier, Guillaume and Van Gemert, Jan C},
+  title = {One-step time-dependent future video frame prediction with a convolutional encoder-decoder neural network},
+  booktitle = {International Conference on Image Analysis and Processing},
+  year = {2017},
+  pages = {140--151},
+  url = {https://link.springer.com/chapter/10.1007/978-3-319-68560-1_13}
+}
+</pre></td>
+</tr>
+<tr id="degeest2016online" class="entry">
+	<td>Geest, R.D., Gavves, E., Ghodrati, A., Li, Z., Snoek, C. and Tuytelaars, T.</td>
+	<td>Online Action Detection <p class="infolinks">[<a href="javascript:toggleInfo('degeest2016online','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>European Conference on Computer Vision&nbsp;</td>
+	<td>misc</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="bib_degeest2016online" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@misc{degeest2016online,
+  author = {Roeland De Geest and Efstratios Gavves and Amir Ghodrati and Zhenyang Li and Cees Snoek and Tinne Tuytelaars},
+  title = {Online Action Detection},
+  booktitle = {European Conference on Computer Vision},
+  year = {2016}
+}
+</pre></td>
+</tr>
+<tr id="rasouli2020pedestrian" class="entry">
+	<td>Rasouli, A., Kotseruba, I. and Tsotsos, J.K.</td>
+	<td>Pedestrian Action Anticipation using Contextual Feature Fusion in Stacked RNNs <p class="infolinks">[<a href="javascript:toggleInfo('rasouli2020pedestrian','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('rasouli2020pedestrian','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>arXiv preprint arXiv:2005.06582&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/2005.06582.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_rasouli2020pedestrian" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: One of the major challenges for autonomous vehicles in urban environments is to understand and predict other road users' actions, in particular, pedestrians at the point of crossing. The common approach to solving this problem is to use the motion history of the agents to predict their future trajectories. However, pedestrians exhibit highly variable actions most of which cannot be understood without visual observation of the pedestrians themselves and their surroundings. To this end, we propose a solution for the problem of pedestrian action anticipation at the point of crossing. Our approach uses a novel stacked RNN architecture in which information collected from various sources, both scene dynamics and visual features, is gradually fused into the network at different levels of processing. We show, via extensive empirical evaluations, that the proposed algorithm achieves a higher prediction accuracy compared to alternative recurrent network architectures. We conduct experiments to investigate the impact of the length of observation, time to event and types of features on the performance of the proposed method. Finally, we demonstrate how different data fusion strategies impact prediction accuracy.</td>
+</tr>
+<tr id="bib_rasouli2020pedestrian" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{rasouli2020pedestrian,
+  author = {Rasouli, Amir and Kotseruba, Iuliia and Tsotsos, John K},
+  title = {Pedestrian Action Anticipation using Contextual Feature Fusion in Stacked RNNs},
+  journal = {arXiv preprint arXiv:2005.06582},
+  year = {2020},
+  url = {https://arxiv.org/pdf/2005.06582.pdf}
+}
+</pre></td>
+</tr>
+<tr id="kwon2019predicting" class="entry">
+	<td>Kwon, Y.-H. and Park, M.-G.</td>
+	<td>Predicting future frames using retrospective cycle gan <p class="infolinks">[<a href="javascript:toggleInfo('kwon2019predicting','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('kwon2019predicting','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 1811-1820&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_CVPR_2019/papers/Kwon_Predicting_Future_Frames_Using_Retrospective_Cycle_GAN_CVPR_2019_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_kwon2019predicting" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Recent advances in deep learning have significantly im- proved the performance of video prediction, however, top- performing algorithms start to generate blurry predictions as they attempt to predict farther future frames. In this pa- per, we propose a unified generative adversarial network for predicting accurate and temporally consistent future frames over time, even in a challenging environment. The key idea is to train a single generator that can predict both future and past frames while enforcing the consistency of bi-directional prediction using the retrospective cycle con- straints. Moreover, we employ two discriminators not only to identify fake frames but also to distinguish fake contained image sequences from the real sequence. The latter discrim- inator, the sequence discriminator, plays a crucial role in predicting temporally consistent future frames. We experi- mentally verify the proposed framework using various real- world videos captured by car-mounted cameras, surveil- lance cameras, and arbitrary devices with state-of-the-art methods.</td>
+</tr>
+<tr id="bib_kwon2019predicting" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{kwon2019predicting,
+  author = {Kwon, Yong-Hoon and Park, Min-Gyu},
+  title = {Predicting future frames using retrospective cycle gan},
+  booktitle = {Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
+  year = {2019},
+  pages = {1811--1820},
+  url = {https://openaccess.thecvf.com/content_CVPR_2019/papers/Kwon_Predicting_Future_Frames_Using_Retrospective_Cycle_GAN_CVPR_2019_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="Gammulle_2019_ICCV" class="entry">
+	<td>Gammulle, H., Denman, S., Sridharan, S. and Fookes, C.</td>
+	<td>Predicting the Future: A Jointly Learnt Model for Action Anticipation <p class="infolinks">[<a href="javascript:toggleInfo('Gammulle_2019_ICCV','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Gammulle_2019_ICCV','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ICCV_2019/papers/Gammulle_Predicting_the_Future_A_Jointly_Learnt_Model_for_Action_Anticipation_ICCV_2019_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_Gammulle_2019_ICCV" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Inspired by human neurological structures for action anticipation, we present an action anticipation model that enables the prediction of plausible future actions by forecasting both the visual and temporal future. In contrast to current state-of-the-art methods which first learn a model to predict future video features and then perform action anticipation using these features, the proposed framework jointly learns to perform the two tasks, future visual and temporal representation synthesis, and early action anticipation. The joint learning framework ensures that the predicted future embeddings are informative to the action anticipation task. Furthermore, through extensive experimental evaluations we demonstrate the utility of using both visual and temporal semantics of the scene, and illustrate how this representation synthesis could be achieved through a recurrent Generative Adversarial Network (GAN) framework. Our model outperforms the current state-of-the-art methods on multiple datasets: UCF101, UCF101-24, UT-Interaction and TV Human Interaction.</td>
+</tr>
+<tr id="bib_Gammulle_2019_ICCV" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Gammulle_2019_ICCV,
+  author = {Gammulle, Harshala and Denman, Simon and Sridharan, Sridha and Fookes, Clinton},
+  title = {Predicting the Future: A Jointly Learnt Model for Action Anticipation},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+  year = {2019},
+  url = {https://openaccess.thecvf.com/content_ICCV_2019/papers/Gammulle_Predicting_the_Future_A_Jointly_Learnt_Model_for_Action_Anticipation_ICCV_2019_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="wiest2012probabilistic" class="entry">
+	<td>Wiest, J., H&ouml;ffken, M., Kre&szlig;el, U. and Dietmayer, K.</td>
+	<td>Probabilistic trajectory prediction with gaussian mixture models <p class="infolinks">[<a href="javascript:toggleInfo('wiest2012probabilistic','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('wiest2012probabilistic','bibtex')">BibTeX</a>]</p></td>
+	<td>2012</td>
+	<td>2012 IEEE Intelligent Vehicles Symposium, pp. 141-146&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=6232277">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_wiest2012probabilistic" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: In the context of driver assistance, an accurate and reliable prediction of the vehicle’s trajectory is beneficial. This can be useful either to increase the flexibility of comfort systems or, in the more interesting case, to detect potentially dangerous situations as early as possible. In this contribution, a novel approach for trajectory prediction is proposed which has the capability to predict the vehicle’s trajectory several seconds in advance, the so called long-term prediction. To achieve this, previously observed motion patterns are used to infer a joint probability distribution as motion model. Using this distribution, a trajectory can be predicted by calculating the probability for the future motion, conditioned on the current observed history motion pattern.<br>The advantage of the probabilistic modeling is that the result is not only a prediction, but rather a whole distribution over the future trajectories and a specific prediction can be made by the evaluation of the statistical properties, e.g. the mean of this conditioned distribution. Additionally, an evaluation of the variance can be used to examine the reliability of the prediction.</td>
+</tr>
+<tr id="bib_wiest2012probabilistic" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{wiest2012probabilistic,
+  author = {Wiest, J&uuml;rgen and H&ouml;ffken, Matthias and Kre&szlig;el, Ulrich and Dietmayer, Klaus},
+  title = {Probabilistic trajectory prediction with gaussian mixture models},
+  booktitle = {2012 IEEE Intelligent Vehicles Symposium},
+  year = {2012},
+  pages = {141--146},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=6232277}
+}
+</pre></td>
+</tr>
+<tr id="8793991" class="entry">
+	<td>Saleh, K., Hossny, M. and Nahavandi, S.</td>
+	<td>Real-time Intent Prediction of Pedestrians for Autonomous Ground Vehicles via Spatio-Temporal DenseNet <p class="infolinks">[<a href="javascript:toggleInfo('8793991','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>2019 International Conference on Robotics and Automation (ICRA), pp. 9704-9710&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICRA.2019.8793991">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_8793991" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{8793991,
+  author = {K. Saleh and M. Hossny and S. Nahavandi},
+  title = {Real-time Intent Prediction of Pedestrians for Autonomous Ground Vehicles via Spatio-Temporal DenseNet},
+  booktitle = {2019 International Conference on Robotics and Automation (ICRA)},
+  year = {2019},
+  pages = {9704-9710},
+  doi = {https://doi.org/10.1109/ICRA.2019.8793991}
+}
+</pre></td>
+</tr>
+<tr id="1334462" class="entry">
+	<td>Schuldt, C., Laptev, I. and Caputo, B.</td>
+	<td>Recognizing human actions: a local SVM approach <p class="infolinks">[<a href="javascript:toggleInfo('1334462','bibtex')">BibTeX</a>]</p></td>
+	<td>2004</td>
+	<td><br/>Vol. 3Proceedings of the 17th International Conference on Pattern Recognition, 2004. ICPR 2004., pp. 32-36 Vol.3&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/ICPR.2004.1334462">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_1334462" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{1334462,
+  author = {C. Schuldt and I. Laptev and B. Caputo},
+  title = {Recognizing human actions: a local SVM approach},
+  booktitle = {Proceedings of the 17th International Conference on Pattern Recognition, 2004. ICPR 2004.},
+  year = {2004},
+  volume = {3},
+  pages = {32-36 Vol.3},
+  doi = {https://doi.org/10.1109/ICPR.2004.1334462}
+}
+</pre></td>
+</tr>
+<tr id="jain2016recurrent" class="entry">
+	<td>Jain, A., Singh, A., Koppula, H.S., Soh, S. and Saxena, A.</td>
+	<td>Recurrent neural networks for driver activity anticipation via sensory-fusion architecture <p class="infolinks">[<a href="javascript:toggleInfo('jain2016recurrent','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>2016 IEEE International Conference on Robotics and Automation (ICRA), pp. 3118-3125&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=7487478">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_jain2016recurrent" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{jain2016recurrent,
+  author = {Jain, Ashesh and Singh, Avi and Koppula, Hema S and Soh, Shane and Saxena, Ashutosh},
+  title = {Recurrent neural networks for driver activity anticipation via sensory-fusion architecture},
+  booktitle = {2016 IEEE International Conference on Robotics and Automation (ICRA)},
+  year = {2016},
+  pages = {3118--3125},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=7487478}
+}
+</pre></td>
+</tr>
+<tr id="DBLP:journals/corr/GaoYN17aa" class="entry">
+	<td>Gao, J., Yang, Z. and Nevatia, R.</td>
+	<td>RED: Reinforced Encoder-Decoder Networks for Action Anticipation <p class="infolinks">[<a href="javascript:toggleInfo('DBLP:journals/corr/GaoYN17aa','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>CoRR<br/>Vol. abs/1707.04818&nbsp;</td>
+	<td>article</td>
+	<td><a href="http://arxiv.org/abs/1707.04818">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_DBLP:journals/corr/GaoYN17aa" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{DBLP:journals/corr/GaoYN17aa,
+  author = {Jiyang Gao and Zhenheng Yang and Ram Nevatia},
+  title = {RED: Reinforced Encoder-Decoder Networks for Action Anticipation},
+  journal = {CoRR},
+  year = {2017},
+  volume = {abs/1707.04818},
+  url = {http://arxiv.org/abs/1707.04818}
+}
+</pre></td>
+</tr>
+<tr id="manh2018scene" class="entry">
+	<td>Manh, H. and Alaghband, G.</td>
+	<td>Scene-lstm: A model for human trajectory prediction <p class="infolinks">[<a href="javascript:toggleInfo('manh2018scene','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>arXiv preprint arXiv:1808.04018&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/1808.04018.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_manh2018scene" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{manh2018scene,
+  author = {Manh, Huynh and Alaghband, Gita},
+  title = {Scene-lstm: A model for human trajectory prediction},
+  journal = {arXiv preprint arXiv:1808.04018},
+  year = {2018},
+  url = {https://arxiv.org/pdf/1808.04018.pdf}
+}
+</pre></td>
+</tr>
+<tr id="Reda_2018_ECCV" class="entry">
+	<td>Reda, F.A., Liu, G., Shih, K.J., Kirby, R., Barker, J., Tarjan, D., Tao, A. and Catanzaro, B.</td>
+	<td>SDC-Net: Video prediction using spatially-displaced convolution <p class="infolinks">[<a href="javascript:toggleInfo('Reda_2018_ECCV','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Reda_2018_ECCV','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>Proceedings of the European Conference on Computer Vision (ECCV)&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ECCV_2018/papers/Fitsum_Reda_SDC-Net_Video_prediction_ECCV_2018_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_Reda_2018_ECCV" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Abstract. We present an approach for high-resolution video frame pre- diction by conditioning on both past frames and past optical flows. Pre- vious approaches rely on resampling past frames, guided by a learned future optical flow, or on direct generation of pixels. Resampling based on flow is insufficient because it cannot deal with disocclusions. Genera- tive models currently lead to blurry results. Recent approaches synthesis a pixel by convolving input patches with a predicted kernel. However, their memory requirement increases with kernel size. Here, we present spatially-displaced convolution (SDC) module for video frame prediction. We learn a motion vector and a kernel for each pixel and synthesize a pixel by applying the kernel at a displaced location in the source image, defined by the predicted motion vector. Our approach inherits the mer- its of both vector-based and kernel-based approaches, while ameliorating their respective disadvantages. We train our model on 428K unlabelled 1080p video game frames. Our approach produces state-of-the-art re- sults, achieving an SSIM score of 0.904 on high-definition YouTube-8M videos, 0.918 on Caltech Pedestrian videos. Our model handles large mo- tion effectively and synthesizes crisp frames with consistent motion.<br>Keywords: 3D CNN, sampling kernel, optical flow, frame prediction</td>
+</tr>
+<tr id="bib_Reda_2018_ECCV" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Reda_2018_ECCV,
+  author = {Reda, Fitsum A. and Liu, Guilin and Shih, Kevin J. and Kirby, Robert and Barker, Jon and Tarjan, David and Tao, Andrew and Catanzaro, Bryan},
+  title = {SDC-Net: Video prediction using spatially-displaced convolution},
+  booktitle = {Proceedings of the European Conference on Computer Vision (ECCV)},
+  year = {2018},
+  url = {https://openaccess.thecvf.com/content_ECCV_2018/papers/Fitsum_Reda_SDC-Net_Video_prediction_ECCV_2018_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="8500658" class="entry">
+	<td>Park, S.H., Kim, B., Kang, C.M., Chung, C.C. and Choi, J.W.</td>
+	<td>Sequence-to-Sequence Prediction of Vehicle Trajectory via LSTM Encoder-Decoder Architecture <p class="infolinks">[<a href="javascript:toggleInfo('8500658','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>2018 IEEE Intelligent Vehicles Symposium (IV), pp. 1672-1678&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1109/IVS.2018.8500658">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_8500658" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{8500658,
+  author = {S. H. Park and B. Kim and C. M. Kang and C. C. Chung and J. W. Choi},
+  title = {Sequence-to-Sequence Prediction of Vehicle Trajectory via LSTM Encoder-Decoder Architecture},
+  booktitle = {2018 IEEE Intelligent Vehicles Symposium (IV)},
+  year = {2018},
+  pages = {1672-1678},
+  doi = {https://doi.org/10.1109/IVS.2018.8500658}
+}
+</pre></td>
+</tr>
+<tr id="Alahi_2016_CVPR" class="entry">
+	<td>Alahi, A., Goel, K., Ramanathan, V., Robicquet, A., Fei-Fei, L. and Savarese, S.</td>
+	<td>Social LSTM: Human Trajectory Prediction in Crowded Spaces <p class="infolinks">[<a href="javascript:toggleInfo('Alahi_2016_CVPR','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('Alahi_2016_CVPR','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_cvpr_2016/papers/Alahi_Social_LSTM_Human_CVPR_2016_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_Alahi_2016_CVPR" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Pedestrians follow different trajectories to avoid obsta- cles and accommodate fellow pedestrians. Any autonomous vehicle navigating such a scene should be able to foresee the future positions of pedestrians and accordingly adjust its path to avoid collisions. This problem of trajectory pre- diction can be viewed as a sequence generation task, where we are interested in predicting the future trajectory of peo- ple based on their past positions. Following the recent suc- cess of Recurrent Neural Network (RNN) models for se- quence prediction tasks, we propose an LSTM model which can learn general human movement and predict their future trajectories. This is in contrast to traditional approaches which use hand-crafted functions such as Social forces. We demonstrate the performance of our method on several pub- lic datasets. Our model outperforms state-of-the-art meth- ods on some of these datasets . We also analyze the tra- jectories predicted by our model to demonstrate the motion behaviour learned by our model.</td>
+</tr>
+<tr id="bib_Alahi_2016_CVPR" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Alahi_2016_CVPR,
+  author = {Alahi, Alexandre and Goel, Kratarth and Ramanathan, Vignesh and Robicquet, Alexandre and Fei-Fei, Li and Savarese, Silvio},
+  title = {Social LSTM: Human Trajectory Prediction in Crowded Spaces},
+  booktitle = {Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year = {2016},
+  url = {https://openaccess.thecvf.com/content_cvpr_2016/papers/Alahi_Social_LSTM_Human_CVPR_2016_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="10.1145/3123266.3123451" class="entry">
+	<td>Zhao, Y., Deng, B., Shen, C., Liu, Y., Lu, H. and Hua, X.-S.</td>
+	<td>Spatio-Temporal AutoEncoder for Video Anomaly Detection <p class="infolinks">[<a href="javascript:toggleInfo('10.1145/3123266.3123451','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>Proceedings of the 25th ACM International Conference on Multimedia, pp. 1933–1941&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://doi.org/10.1145/3123266.3123451">DOI</a> <a href="https://www.researchgate.net/publication/320543620_Spatio-Temporal_AutoEncoder_for_Video_Anomaly_Detection">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_10.1145/3123266.3123451" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{10.1145/3123266.3123451,
+  author = {Zhao, Yiru and Deng, Bing and Shen, Chen and Liu, Yao and Lu, Hongtao and Hua, Xian-Sheng},
+  title = {Spatio-Temporal AutoEncoder for Video Anomaly Detection},
+  booktitle = {Proceedings of the 25th ACM International Conference on Multimedia},
+  publisher = {Association for Computing Machinery},
+  year = {2017},
+  pages = {1933–1941},
+  url = {https://www.researchgate.net/publication/320543620_Spatio-Temporal_AutoEncoder_for_Video_Anomaly_Detection},
+  doi = {https://doi.org/10.1145/3123266.3123451}
+}
+</pre></td>
+</tr>
+<tr id="xue2018ss" class="entry">
+	<td>Xue, H., Huynh, D.Q. and Reynolds, M.</td>
+	<td>SS-LSTM: A hierarchical LSTM model for pedestrian trajectory prediction <p class="infolinks">[<a href="javascript:toggleInfo('xue2018ss','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('xue2018ss','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>2018 IEEE Winter Conference on Applications of Computer Vision (WACV), pp. 1186-1194&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8354239">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_xue2018ss" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Pedestrian trajectory prediction is an extremely chal- lenging problem because of the crowdedness and clutter of the scenes. Previous deep learning LSTM-based approa- ches focus on the neighbourhood influence of pedestrians but ignore the scene layouts in pedestrian trajectory predic- tion. In this paper, a novel hierarchical LSTM-based net- work is proposed to consider both the influence of social neighbourhood and scene layouts. Our SS-LSTM, which stands for Social-Scene-LSTM, uses three different LSTMs to capture person, social and scene scale information. We also use a circular shape neighbourhood setting instead of the traditional rectangular shape neighbourhood in the so- cial scale. We evaluate our proposed method against two baseline methods and a state-of-art technique on three pub- lic datasets. The results show that our method outperforms other methods and that using circular shape neighbourhood improves the prediction accuracy.</td>
+</tr>
+<tr id="bib_xue2018ss" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{xue2018ss,
+  author = {Xue, Hao and Huynh, Du Q and Reynolds, Mark},
+  title = {SS-LSTM: A hierarchical LSTM model for pedestrian trajectory prediction},
+  booktitle = {2018 IEEE Winter Conference on Applications of Computer Vision (WACV)},
+  year = {2018},
+  pages = {1186--1194},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=8354239}
+}
+</pre></td>
+</tr>
+<tr id="lee2018stochastic" class="entry">
+	<td>Lee, A.X., Zhang, R., Ebert, F., Abbeel, P., Finn, C. and Levine, S.</td>
+	<td>Stochastic adversarial video prediction <p class="infolinks">[<a href="javascript:toggleInfo('lee2018stochastic','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('lee2018stochastic','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>arXiv preprint arXiv:1804.01523&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/1804.01523.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_lee2018stochastic" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Beingabletopredictwhatmayhappeninthefuturerequires an in-depth understanding of the physical and causal rules that govern the world. A model that is able to do so has a number of appealing applications, from robotic planning to representation learning. However, learning to predict raw future observations, such as frames in a video, is exceedingly challenging—the ambiguous nature of the problem can cause a naively designed model to average together possible futures into a sin- gle, blurry prediction. Recently, this has been addressed by two distinct approaches: (a) latent variational variable models that explicitly model underlying stochasticity and (b) adversarially-trained models that aim to produce naturalistic images. However, a standard latent variable model can struggle to produce realistic results, and a standard adversarially- trained model underutilizes latent variables and fails to produce diverse predictions. We show that these distinct methods are in fact complemen- tary. Combining the two produces predictions that look more realistic to human raters and better cover the range of possible futures. Our method outperforms prior and concurrent work in these aspects.<br>Keywords: video prediction, GANs, variational autoencoder</td>
+</tr>
+<tr id="bib_lee2018stochastic" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{lee2018stochastic,
+  author = {Lee, Alex X and Zhang, Richard and Ebert, Frederik and Abbeel, Pieter and Finn, Chelsea and Levine, Sergey},
+  title = {Stochastic adversarial video prediction},
+  journal = {arXiv preprint arXiv:1804.01523},
+  year = {2018},
+  url = {https://arxiv.org/pdf/1804.01523.pdf}
+}
+</pre></td>
+</tr>
+<tr id="6133287" class="entry">
+	<td>Patron-Perez, A., Marszalek, M., Reid, I. and Zisserman, A.</td>
+	<td>Structured Learning of Human Interactions in TV Shows <p class="infolinks">[<a href="javascript:toggleInfo('6133287','bibtex')">BibTeX</a>]</p></td>
+	<td>2012</td>
+	<td>IEEE Transactions on Pattern Analysis and Machine Intelligence<br/>Vol. 34(12), pp. 2441-2453&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1109/TPAMI.2012.24">DOI</a> &nbsp;</td>
+</tr>
+<tr id="bib_6133287" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{6133287,
+  author = {A. Patron-Perez and M. Marszalek and I. Reid and A. Zisserman},
+  title = {Structured Learning of Human Interactions in TV Shows},
+  journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  year = {2012},
+  volume = {34},
+  number = {12},
+  pages = {2441-2453},
+  doi = {https://doi.org/10.1109/TPAMI.2012.24}
+}
+</pre></td>
+</tr>
+<tr id="action_anticipation3" class="entry">
+	<td>Xu, M., Gao, M., Chen, Y.-T., Davis, L.S. and Crandall, D.J.</td>
+	<td>Temporal recurrent networks for online action detection <p class="infolinks">[<a href="javascript:toggleInfo('action_anticipation3','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Proceedings of the IEEE International Conference on Computer Vision, pp. 5532-5541&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_ICCV_2019/papers/Xu_Temporal_Recurrent_Networks_for_Online_Action_Detection_ICCV_2019_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_action_anticipation3" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{action_anticipation3,
+  author = {Xu, Mingze and Gao, Mingfei and Chen, Yi-Ting and Davis, Larry S and Crandall, David J},
+  title = {Temporal recurrent networks for online action detection},
+  booktitle = {Proceedings of the IEEE International Conference on Computer Vision},
+  year = {2019},
+  pages = {5532--5541},
+  url = {https://openaccess.thecvf.com/content_ICCV_2019/papers/Xu_Temporal_Recurrent_Networks_for_Online_Action_Detection_ICCV_2019_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="damen2020epic" class="entry">
+	<td>Damen, D., Doughty, H., Farinella, G., Fidler, S., Furnari, A., Kazakos, E., Moltisanti, D., Munro, J., Perrett, T., Price, W. and others</td>
+	<td>The EPIC-KITCHENS dataset: collection, challenges and baselines <p class="infolinks">[<a href="javascript:toggleInfo('damen2020epic','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>IEEE Computer Architecture Letters(01), pp. 1-1&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://epic-kitchens.github.io/2020-100">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_damen2020epic" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{damen2020epic,
+  author = {Damen, Dima and Doughty, Hazel and Farinella, Giovanni and Fidler, Sanja and Furnari, Antonino and Kazakos, Evangelos and Moltisanti, Davide and Munro, Jonathan and Perrett, Toby and Price, Will and others},
+  title = {The EPIC-KITCHENS dataset: collection, challenges and baselines},
+  journal = {IEEE Computer Architecture Letters},
+  publisher = {IEEE Computer Society},
+  year = {2020},
+  number = {01},
+  pages = {1--1},
+  url = {https://epic-kitchens.github.io/2020-100}
+}
+</pre></td>
+</tr>
+<tr id="ke2019time" class="entry">
+	<td>Ke, Q., Fritz, M. and Schiele, B.</td>
+	<td>Time-conditioned action anticipation in one shot <p class="infolinks">[<a href="javascript:toggleInfo('ke2019time','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 9925-9934&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_CVPR_2019/papers/Ke_Time-Conditioned_Action_Anticipation_in_One_Shot_CVPR_2019_paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_ke2019time" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{ke2019time,
+  author = {Ke, Qiuhong and Fritz, Mario and Schiele, Bernt},
+  title = {Time-conditioned action anticipation in one shot},
+  booktitle = {Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
+  year = {2019},
+  pages = {9925--9934},
+  url = {https://openaccess.thecvf.com/content_CVPR_2019/papers/Ke_Time-Conditioned_Action_Anticipation_in_One_Shot_CVPR_2019_paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="malla2020titan" class="entry">
+	<td>Malla, S., Dariush, B. and Choi, C.</td>
+	<td>TITAN: Future Forecast using Action Priors <p class="infolinks">[<a href="javascript:toggleInfo('malla2020titan','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('malla2020titan','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 11186-11196&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_CVPR_2020/html/Malla_TITAN_Future_Forecast_Using_Action_Priors_CVPR_2020_paper.html">URL</a>&nbsp;</td>
+</tr>
+<tr id="abs_malla2020titan" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We consider the problem of predicting the future trajectory of scene agents from egocentric views obtained from a moving platform. This problem is important in a variety of domains, particularly for autonomous systems making reactive or strategic decisions in navigation. In an attempt to address this problem, we introduce TITAN (Trajectory Inference using Targeted Action priors Network), a new model that incorporates prior positions, actions, and context to forecast future trajectory of agents and future ego-motion. In the absence of an appropriate dataset for this task, we created the TITAN dataset that consists of 700 labeled video-clips (with odometry) captured from a moving vehicle on highly interactive urban traffic scenes in Tokyo. Our dataset includes 50 labels including vehicle states and actions, pedestrian age groups, and targeted pedestrian action attributes that are organized hierarchically corresponding to atomic, simple/complex-contextual, transportive, and communicative actions. To evaluate our model, we conducted extensive experiments on the TITAN dataset, revealing significant performance improvement against baselines and state-of-the-art algorithms. We also report promising results from our Agent Importance Mechanism (AIM), a module which provides insight into assessment of perceived risk by calculating the relative influence of each agent on the future ego-trajectory. The dataset is available at https://usa.honda-ri.com/titan</td>
+</tr>
+<tr id="bib_malla2020titan" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{malla2020titan,
+  author = {Malla, Srikanth and Dariush, Behzad and Choi, Chiho},
+  title = {TITAN: Future Forecast using Action Priors},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  year = {2020},
+  pages = {11186--11196},
+  url = {https://openaccess.thecvf.com/content_CVPR_2020/html/Malla_TITAN_Future_Forecast_Using_Action_Priors_CVPR_2020_paper.html}
+}
+</pre></td>
+</tr>
+<tr id="simonyan2014two" class="entry">
+	<td>Simonyan, K. and Zisserman, A.</td>
+	<td>Two-stream convolutional networks for action recognition in videos <p class="infolinks">[<a href="javascript:toggleInfo('simonyan2014two','bibtex')">BibTeX</a>]</p></td>
+	<td>2014</td>
+	<td>Advances in neural information processing systems<br/>Vol. 27, pp. 568-576&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://papers.nips.cc/paper/2014/file/00ec53c4682d36f5c4359f4ae7bd7ba1-Paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_simonyan2014two" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{simonyan2014two,
+  author = {Simonyan, Karen and Zisserman, Andrew},
+  title = {Two-stream convolutional networks for action recognition in videos},
+  journal = {Advances in neural information processing systems},
+  year = {2014},
+  volume = {27},
+  pages = {568--576},
+  url = {https://papers.nips.cc/paper/2014/file/00ec53c4682d36f5c4359f4ae7bd7ba1-Paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="soomro2012ucf101" class="entry">
+	<td>Soomro, K., Zamir, A.R. and Shah, M.</td>
+	<td>UCF101: A Dataset of 101 Human Actions Classes From Videos in The Wild <p class="infolinks">[<a href="javascript:toggleInfo('soomro2012ucf101','bibtex')">BibTeX</a>]</p></td>
+	<td>2012</td>
+	<td>arXiv preprint arXiv:1212.0402&nbsp;</td>
+	<td>misc</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="bib_soomro2012ucf101" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@misc{soomro2012ucf101,
+  author = {Khurram Soomro and Amir Roshan Zamir and Mubarak Shah},
+  title = {UCF101: A Dataset of 101 Human Actions Classes From Videos in The Wild},
+  journal = {arXiv preprint arXiv:1212.0402},
+  year = {2012}
+}
+</pre></td>
+</tr>
+<tr id="chan2008ucsd" class="entry">
+	<td>Chan, A. and Vasconcelos, N.</td>
+	<td>Ucsd pedestrian dataset <p class="infolinks">[<a href="javascript:toggleInfo('chan2008ucsd','bibtex')">BibTeX</a>]</p></td>
+	<td>2008</td>
+	<td>IEEE Trans. on Pattern Analysis and Machine Intelligence (TPAMI)<br/>Vol. 30(5), pp. 909-926&nbsp;</td>
+	<td>article</td>
+	<td><a href="http://visal.cs.cityu.edu.hk/static/downloads/crowddoc/README-vids.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_chan2008ucsd" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{chan2008ucsd,
+  author = {Chan, Antoni and Vasconcelos, Nuno},
+  title = {Ucsd pedestrian dataset},
+  journal = {IEEE Trans. on Pattern Analysis and Machine Intelligence (TPAMI)},
+  year = {2008},
+  volume = {30},
+  number = {5},
+  pages = {909--926},
+  url = {http://visal.cs.cityu.edu.hk/static/downloads/crowddoc/README-vids.pdf}
+}
+</pre></td>
+</tr>
+<tr id="abu2019uncertainty" class="entry">
+	<td>Abu Farha, Y. and Gall, J.</td>
+	<td>Uncertainty-Aware Anticipation of Activities <p class="infolinks">[<a href="javascript:toggleInfo('abu2019uncertainty','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Proceedings of the IEEE International Conference on Computer Vision Workshops, pp. 0-0&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=9021956">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_abu2019uncertainty" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{abu2019uncertainty,
+  author = {Abu Farha, Yazan and Gall, Juergen},
+  title = {Uncertainty-Aware Anticipation of Activities},
+  booktitle = {Proceedings of the IEEE International Conference on Computer Vision Workshops},
+  year = {2019},
+  pages = {0--0},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=9021956}
+}
+</pre></td>
+</tr>
+<tr id="finn2016unsupervised" class="entry">
+	<td>Finn, C., Goodfellow, I. and Levine, S.</td>
+	<td>Unsupervised learning for physical interaction through video prediction <p class="infolinks">[<a href="javascript:toggleInfo('finn2016unsupervised','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>Advances in neural information processing systems, pp. 64-72&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://papers.nips.cc/paper/2016/file/d9d4f495e875a2e075a1a4a6e1b9770f-Paper.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_finn2016unsupervised" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{finn2016unsupervised,
+  author = {Finn, Chelsea and Goodfellow, Ian and Levine, Sergey},
+  title = {Unsupervised learning for physical interaction through video prediction},
+  booktitle = {Advances in neural information processing systems},
+  year = {2016},
+  pages = {64--72},
+  url = {https://papers.nips.cc/paper/2016/file/d9d4f495e875a2e075a1a4a6e1b9770f-Paper.pdf}
+}
+</pre></td>
+</tr>
+<tr id="traffic_accident_anomaly" class="entry">
+	<td>Yao, Y., Xu, M., Wang, Y., Crandall, D.J. and Atkins, E.M.</td>
+	<td>Unsupervised traffic accident detection in first-person videos <p class="infolinks">[<a href="javascript:toggleInfo('traffic_accident_anomaly','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>arXiv preprint arXiv:1903.00618&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://arxiv.org/pdf/1903.00618.pdf">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_traffic_accident_anomaly" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{traffic_accident_anomaly,
+  author = {Yao, Yu and Xu, Mingze and Wang, Yuchen and Crandall, David J and Atkins, Ella M},
+  title = {Unsupervised traffic accident detection in first-person videos},
+  journal = {arXiv preprint arXiv:1903.00618},
+  year = {2019},
+  url = {https://arxiv.org/pdf/1903.00618.pdf}
+}
+</pre></td>
+</tr>
+<tr id="ryoo2010ut" class="entry">
+	<td>Ryoo, M.S. and Aggarwal, J.</td>
+	<td>UT-interaction dataset, ICPR contest on semantic description of human activities (SDHA) <p class="infolinks">[<a href="javascript:toggleInfo('ryoo2010ut','bibtex')">BibTeX</a>]</p></td>
+	<td>2010</td>
+	<td><br/>Vol. 2IEEE International Conference on Pattern Recognition Workshops, pp. 4&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://cvrc.ece.utexas.edu/SDHA2010/Human_Interaction.html">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_ryoo2010ut" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{ryoo2010ut,
+  author = {Ryoo, Michael S and Aggarwal, JK},
+  title = {UT-interaction dataset, ICPR contest on semantic description of human activities (SDHA)},
+  booktitle = {IEEE International Conference on Pattern Recognition Workshops},
+  year = {2010},
+  volume = {2},
+  pages = {4},
+  url = {https://cvrc.ece.utexas.edu/SDHA2010/Human_Interaction.html}
+}
+</pre></td>
+</tr>
+<tr id="goli2018vehicle" class="entry">
+	<td>Goli, S.A., Far, B.H. and Fapojuwo, A.O.</td>
+	<td>Vehicle Trajectory Prediction with Gaussian Process Regression in Connected Vehicle Environment <p class="infolinks">[<a href="javascript:toggleInfo('goli2018vehicle','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>2018 IEEE Intelligent Vehicles Symposium (IV), pp. 550-555&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8500614">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_goli2018vehicle" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{goli2018vehicle,
+  author = {Goli, Sepideh Afkhami and Far, Behrouz H and Fapojuwo, Abraham O},
+  title = {Vehicle Trajectory Prediction with Gaussian Process Regression in Connected Vehicle Environment},
+  booktitle = {2018 IEEE Intelligent Vehicles Symposium (IV)},
+  year = {2018},
+  pages = {550--555},
+  url = {https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=8500614}
+}
+</pre></td>
+</tr>
+<tr id="geiger2013vision" class="entry">
+	<td>Geiger, A., Lenz, P., Stiller, C. and Urtasun, R.</td>
+	<td>Vision meets robotics: The kitti dataset <p class="infolinks">[<a href="javascript:toggleInfo('geiger2013vision','bibtex')">BibTeX</a>]</p></td>
+	<td>2013</td>
+	<td>The International Journal of Robotics Research<br/>Vol. 32(11), pp. 1231-1237&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://journals.sagepub.com/doi/abs/10.1177/0278364913491297">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_geiger2013vision" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{geiger2013vision,
+  author = {Geiger, Andreas and Lenz, Philip and Stiller, Christoph and Urtasun, Raquel},
+  title = {Vision meets robotics: The kitti dataset},
+  journal = {The International Journal of Robotics Research},
+  publisher = {Sage Publications Sage UK: London, England},
+  year = {2013},
+  volume = {32},
+  number = {11},
+  pages = {1231--1237},
+  url = {https://journals.sagepub.com/doi/abs/10.1177/0278364913491297}
+}
+</pre></td>
+</tr>
+<tr id="Farha_2018_CVPR" class="entry">
+	<td>Abu Farha, Y., Richard, A. and Gall, J.</td>
+	<td>When Will You Do What? - Anticipating Temporal Occurrences of Activities <p class="infolinks">[<a href="javascript:toggleInfo('Farha_2018_CVPR','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>The IEEE Conference on Computer Vision and Pattern Recognition (CVPR)&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="http://openaccess.thecvf.com/content_cvpr_2018/html/Abu_Farha_When_Will_You_CVPR_2018_paper.html">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_Farha_2018_CVPR" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Farha_2018_CVPR,
+  author = {Abu Farha, Yazan and Richard, Alexander and Gall, Juergen},
+  title = {When Will You Do What? - Anticipating Temporal Occurrences of Activities},
+  booktitle = {The IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year = {2018},
+  url = {http://openaccess.thecvf.com/content_cvpr_2018/html/Abu_Farha_When_Will_You_CVPR_2018_paper.html}
+}
+</pre></td>
+</tr>
+<tr id="Li_2019_CVPR" class="entry">
+	<td>Li, Y.</td>
+	<td>Which Way Are You Going? Imitative Decision Learning for Path Forecasting in Dynamic Scenes <p class="infolinks">[<a href="javascript:toggleInfo('Li_2019_CVPR','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)&nbsp;</td>
+	<td>inproceedings</td>
+	<td><a href="https://openaccess.thecvf.com/content_CVPR_2019/html/Li_Which_Way_Are_You_Going_Imitative_Decision_Learning_for_Path_CVPR_2019_paper.html">URL</a>&nbsp;</td>
+</tr>
+<tr id="bib_Li_2019_CVPR" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@inproceedings{Li_2019_CVPR,
+  author = {Li, Yuke},
+  title = {Which Way Are You Going? Imitative Decision Learning for Path Forecasting in Dynamic Scenes},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year = {2019},
+  url = {https://openaccess.thecvf.com/content_CVPR_2019/html/Li_Which_Way_Are_You_Going_Imitative_Decision_Learning_for_Path_CVPR_2019_paper.html}
+}
+</pre></td>
+</tr>
+</tbody>
+</table>
+<footer>
+ <small>Created by <a href="http://jabref.sourceforge.net">JabRef</a> on 10/01/2021.</small>
+</footer>
+<!-- file generated by JabRef -->
+</body>
+</html>
